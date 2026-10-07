@@ -1,0 +1,22 @@
+# Secretos locales: nunca se versionan
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+*.auto.tfvars
+
+# macOS / editores
+.DS_Store
+.idea/
+.vscode/

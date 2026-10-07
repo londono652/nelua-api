@@ -1,0 +1,232 @@
+{
+  "cluster": {
+    "deployments": [
+      {
+        "namespace": "prod",
+        "name": "nelua-api",
+        "status": "healthy",
+        "replicas": {
+          "desired": 3,
+          "ready": 3,
+          "updated": 3,
+          "available": 3
+        },
+        "image": "000000000000.dkr.ecr.us-east-2.amazonaws.com/nelua-api:sample-1a2b3c4",
+        "version": "sample-1a2b3c4",
+        "updated_at": "2026-01-15T14:32:00Z",
+        "autoscaling": {
+          "min_replicas": 3,
+          "max_replicas": 30,
+          "current_replicas": 3,
+          "desired_replicas": 3,
+          "cpu_target_percent": 60,
+          "cpu_current_percent": 21
+        },
+        "pods": [
+          {
+            "name": "nelua-api-7d9f8b6c5-abcde",
+            "phase": "Running",
+            "ready": true,
+            "restarts": 0,
+            "node": "sample-node-a",
+            "started_at": "2026-01-15T14:31:10Z"
+          },
+          {
+            "name": "nelua-api-7d9f8b6c5-fghij",
+            "phase": "Running",
+            "ready": true,
+            "restarts": 0,
+            "node": "sample-node-b",
+            "started_at": "2026-01-15T14:31:25Z"
+          },
+          {
+            "name": "nelua-api-7d9f8b6c5-klmno",
+            "phase": "Running",
+            "ready": true,
+            "restarts": 4,
+            "node": "sample-node-c",
+            "started_at": "2026-01-15T14:31:40Z"
+          }
+        ]
+      },
+      {
+        "namespace": "staging",
+        "name": "nelua-api",
+        "status": "progressing",
+        "replicas": {
+          "desired": 2,
+          "ready": 1,
+          "updated": 2,
+          "available": 1
+        },
+        "image": "000000000000.dkr.ecr.us-east-2.amazonaws.com/nelua-api:sample-5e6f7a8",
+        "version": "sample-5e6f7a8",
+        "updated_at": "2026-01-15T16:05:00Z",
+        "autoscaling": {
+          "min_replicas": 2,
+          "max_replicas": 4,
+          "current_replicas": 2,
+          "desired_replicas": 2,
+          "cpu_target_percent": 60,
+          "cpu_current_percent": 8
+        },
+        "pods": [
+          {
+            "name": "nelua-api-5c4d3e2f1-pqrst",
+            "phase": "Running",
+            "ready": true,
+            "restarts": 0,
+            "node": "sample-node-a",
+            "started_at": "2026-01-15T16:04:30Z"
+          },
+          {
+            "name": "nelua-api-5c4d3e2f1-uvwxy",
+            "phase": "Pending",
+            "ready": false,
+            "restarts": 0,
+            "node": null,
+            "started_at": null
+          }
+        ]
+      }
+    ],
+    "nodes": [
+      {
+        "name": "sample-node-a",
+        "ready": true,
+        "zone": "us-east-2a",
+        "instance_type": "c7g.large",
+        "architecture": "arm64",
+        "capacity_type": "spot",
+        "node_pool": "graviton",
+        "kubelet_version": "v1.34.0",
+        "created_at": "2026-01-15T13:00:00Z"
+      },
+      {
+        "name": "sample-node-b",
+        "ready": true,
+        "zone": "us-east-2b",
+        "instance_type": "c7g.large",
+        "architecture": "arm64",
+        "capacity_type": "spot",
+        "node_pool": "graviton",
+        "kubelet_version": "v1.34.0",
+        "created_at": "2026-01-15T13:00:00Z"
+      },
+      {
+        "name": "sample-node-c",
+        "ready": true,
+        "zone": "us-east-2c",
+        "instance_type": "m7g.large",
+        "architecture": "arm64",
+        "capacity_type": "on-demand",
+        "node_pool": "graviton",
+        "kubelet_version": "v1.34.0",
+        "created_at": "2026-01-15T13:00:00Z"
+      }
+    ],
+    "revisions": [
+      {
+        "namespace": "prod",
+        "deployment": "nelua-api",
+        "revision": 5,
+        "version": "sample-1a2b3c4",
+        "image": "000000000000.dkr.ecr.us-east-2.amazonaws.com/nelua-api:sample-1a2b3c4",
+        "created_at": "2026-01-14T10:12:00Z",
+        "active": true,
+        "reactivated": true,
+        "replicas": {
+          "desired": 3,
+          "ready": 3
+        }
+      },
+      {
+        "namespace": "prod",
+        "deployment": "nelua-api",
+        "revision": 4,
+        "version": "sample-9d8c7b6",
+        "image": "000000000000.dkr.ecr.us-east-2.amazonaws.com/nelua-api:sample-9d8c7b6",
+        "created_at": "2026-01-15T14:20:00Z",
+        "active": false,
+        "reactivated": false,
+        "replicas": {
+          "desired": 0,
+          "ready": 0
+        }
+      },
+      {
+        "namespace": "prod",
+        "deployment": "nelua-api",
+        "revision": 2,
+        "version": "sample-0f1e2d3",
+        "image": "000000000000.dkr.ecr.us-east-2.amazonaws.com/nelua-api:sample-0f1e2d3",
+        "created_at": "2026-01-12T09:40:00Z",
+        "active": false,
+        "reactivated": false,
+        "replicas": {
+          "desired": 0,
+          "ready": 0
+        }
+      },
+      {
+        "namespace": "staging",
+        "deployment": "nelua-api",
+        "revision": 7,
+        "version": "sample-5e6f7a8",
+        "image": "000000000000.dkr.ecr.us-east-2.amazonaws.com/nelua-api:sample-5e6f7a8",
+        "created_at": "2026-01-15T16:04:00Z",
+        "active": true,
+        "reactivated": false,
+        "replicas": {
+          "desired": 2,
+          "ready": 1
+        }
+      },
+      {
+        "namespace": "staging",
+        "deployment": "nelua-api",
+        "revision": 6,
+        "version": "sample-9d8c7b6",
+        "image": "000000000000.dkr.ecr.us-east-2.amazonaws.com/nelua-api:sample-9d8c7b6",
+        "created_at": "2026-01-15T14:02:00Z",
+        "active": false,
+        "reactivated": false,
+        "replicas": {
+          "desired": 0,
+          "ready": 0
+        }
+      }
+    ],
+    "events": [
+      {
+        "namespace": "staging",
+        "kind": "Pod",
+        "name": "nelua-api-5c4d3e2f1-uvwxy",
+        "reason": "FailedScheduling",
+        "message": "0/3 nodes are available: 3 Insufficient cpu.",
+        "count": 4,
+        "last_seen": "2026-01-15T16:05:30Z"
+      }
+    ]
+  },
+  "budgets": [
+    {
+      "name": "sample-monthly-budget",
+      "period": "monthly",
+      "limit": {
+        "amount": 50.0,
+        "unit": "USD"
+      },
+      "actual_spend": {
+        "amount": 18.4,
+        "unit": "USD"
+      },
+      "forecasted_spend": {
+        "amount": 41.2,
+        "unit": "USD"
+      },
+      "percent_used": 36.8,
+      "status": "ok"
+    }
+  ]
+}

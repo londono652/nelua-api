@@ -1,0 +1,35 @@
+# Levanta la API en local con un solo comando:
+#
+#   cp .env.example .env
+#   docker compose up --build
+#
+# En local no hay clúster ni cuenta de AWS, así que la API usa la fuente de
+# ejemplo (una foto fija, no datos reales). En el clúster usa las fuentes
+# reales: la API de Kubernetes y AWS Budgets.
+services:
+  api:
+    build:
+      context: .
+      args:
+        APP_VERSION: local
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: local
+      CLUSTER_SOURCE: sample
+      BUDGET_SOURCE: sample
+      # La llave no está en este archivo ni en el código: sale de .env,
+      # que no se versiona. Si falta, compose se detiene con este mensaje.
+      API_KEYS: ${API_KEYS:?Define API_KEYS en el archivo .env (copia .env.example)}
+    # Mismas restricciones que en el clúster: sistema de archivos de solo lectura
+    # y sin privilegios adicionales.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
