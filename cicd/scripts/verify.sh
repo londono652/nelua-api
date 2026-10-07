@@ -34,6 +34,13 @@ if [ "$status" != "401" ]; then
   exit 1
 fi
 
+# Las métricas no deben ser visibles desde internet.
+status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$URL/metrics")
+if [ "$status" != "404" ]; then
+  echo "ERROR: /metrics es accesible desde fuera (respondió $status, se esperaba 404)" >&2
+  exit 1
+fi
+
 for path in /v1/summary /v1/deployments /v1/alerts /v1/budget; do
   status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "X-API-Key: $API_KEY" "$URL$path")
   echo "  $path -> $status"

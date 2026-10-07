@@ -117,11 +117,36 @@ resource "aws_lb_listener" "https" {
   }
 }
 
+# Las métricas son para Prometheus, que las lee directo de los pods dentro del
+# clúster. Desde internet no se entregan: esta regla va primero y responde 404.
+resource "aws_lb_listener_rule" "block_metrics" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 1
+
+  condition {
+    path_pattern {
+      values = ["/metrics", "/metrics/*"]
+    }
+  }
+
+  action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "application/json"
+      message_body = "{\"detail\":\"Not found\"}"
+      status_code  = "404"
+    }
+  }
+}
+
 # Enruta por nombre: api.nelua.site -> prod, api-staging.nelua.site -> staging.
 resource "aws_lb_listener_rule" "api" {
   for_each = local.environments
 
   listener_arn = aws_lb_listener.https.arn
+  # Prioridades explícitas, siempre después de la regla que bloquea /metrics.
+  priority = 10 + index(keys(local.environments), each.key)
 
   condition {
     host_header {

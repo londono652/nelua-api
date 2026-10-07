@@ -31,7 +31,7 @@ variable "azs" {
 variable "nat_per_az" {
   description = "true = un NAT Gateway por zona (producción). false = uno solo (demo, más barato)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "kubernetes_version" {
