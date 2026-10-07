@@ -1,0 +1,14 @@
+environment: prod
+
+sources:
+  cluster: kubernetes
+  budget: aws
+
+# minReplicas y maxReplicas se ajustan con el resultado de la prueba de carga:
+# RPS que soporta un pod -> pods necesarios para 10.000 RPS + margen.
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 30
+
+nodeSelector:
+  kubernetes.io/arch: arm64

@@ -1,0 +1,52 @@
+# Generadores de carga dentro del clúster: 4 pods de k6 en paralelo, cada uno
+# con una cuarta parte de la carga (4 x 2.500 = 10.000 RPS).
+# Salen a internet por el NAT y entran por la URL pública, así que la prueba
+# recorre el camino real: DNS -> WAF -> ALB -> pods.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-load
+  namespace: loadtest
+spec:
+  parallelism: 4
+  completions: 4
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: k6-load
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: grafana/k6:2.3.0
+          args: ["run", "/scripts/load.js"]
+          env:
+            - name: BASE_URL
+              value: "https://api.nelua.site"
+            # La llave llega desde un Secret que crea run-in-cluster.sh.
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: k6-api-key
+                  key: api-key
+            - name: TARGET_RPS
+              value: "2500"
+            - name: RAMP
+              value: "2m"
+            - name: HOLD
+              value: "5m"
+          resources:
+            requests:
+              cpu: "2"
+              memory: 2Gi
+            limits:
+              memory: 4Gi
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap:
+            name: k6-script

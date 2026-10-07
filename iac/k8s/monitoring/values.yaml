@@ -1,0 +1,44 @@
+# Valores del chart kube-prometheus-stack (Prometheus + Grafana).
+
+# Sin Alertmanager: las alertas que avisan a una persona son las alarmas de
+# CloudWatch (iac/stacks/platform/alarms.tf), que no dependen del clúster.
+alertmanager:
+  enabled: false
+
+# El plano de control de EKS lo administra AWS: estos componentes no se pueden
+# consultar desde el clúster y aparecerían como caídos.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    # Descubre ServiceMonitors de cualquier namespace, no solo los del chart.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    scrapeInterval: 15s
+    retention: 2d
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+
+grafana:
+  # La contraseña vive en un Secret creado por iac/scripts/apply-k8s.sh,
+  # no en este archivo.
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  # Grafana no se expone a internet: se accede con kubectl port-forward.
+  service:
+    type: ClusterIP
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard

@@ -1,0 +1,18 @@
+# Le indica a Prometheus que recoja las métricas (/metrics) de la API en
+# staging y prod. Vive del lado de infraestructura: la app solo expone el
+# endpoint y no necesita permisos sobre los recursos de monitoreo.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nelua-api
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: ["staging", "prod"]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nelua-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

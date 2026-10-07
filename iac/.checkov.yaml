@@ -1,0 +1,10 @@
+# Configuración de checkov (análisis de seguridad de la IaC).
+#
+# Las excepciones puntuales están junto al recurso, como comentario
+# "#checkov:skip=<ID>:<justificación>". Aquí solo van las globales.
+skip-check:
+  # Los módulos oficiales (terraform-aws-modules) se consumen desde el Terraform
+  # Registry con una restricción de versión mayor (~> X.0). Fijar un hash de commit
+  # exigiría dejar el registro y referenciar Git directamente; es un endurecimiento
+  # válido para producción, que aquí se cambia por legibilidad.
+  - CKV_TF_1

@@ -1,0 +1,67 @@
+# Valores por defecto. Cada entorno los ajusta en values-<entorno>.yaml,
+# y el pipeline inyecta image.repository e image.tag.
+
+image:
+  repository: nelua-api
+  tag: local
+  pullPolicy: IfNotPresent
+
+containerPort: 8000
+
+# Nombre del entorno que reporta la API (local, staging, prod).
+environment: local
+
+# De dónde lee los datos la API.
+#   cluster: "kubernetes" (el clúster donde corre) o "sample" (foto de ejemplo)
+#   budget:  "aws" (AWS Budgets), "sample" o "none"
+sources:
+  cluster: kubernetes
+  budget: none
+
+# Namespaces cuyo estado expone la API.
+watchNamespaces: [prod, staging]
+
+# Autenticación. En AWS se indica el nombre del secreto de Secrets Manager
+# (lo pasa el pipeline, leído de Parameter Store). Vacío para pruebas locales,
+# donde la llave se entrega con extraEnv.
+apiKeys:
+  secretId: ""
+awsRegion: us-east-2
+
+# Variables adicionales, solo para pruebas locales. Ejemplo:
+#   --set-string 'extraEnv[0].name=API_KEYS,extraEnv[0].value=llave-local'
+extraEnv: []
+
+service:
+  port: 80
+
+# Un solo proceso de uvicorn usa como máximo 1 CPU: se escala con más pods.
+resources:
+  requests:
+    cpu: 500m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 60
+
+# Réplicas fijas; solo se usa si autoscaling.enabled es false.
+replicaCount: 2
+
+# Máximo de pods que pueden estar caídos a la vez por mantenimiento de nodos.
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 25%
+
+# Segundos que el pod sigue atendiendo después de recibir la orden de apagado,
+# para que el balanceador deje de enviarle tráfico antes de que muera.
+preStopSleepSeconds: 10
+terminationGracePeriodSeconds: 40
+
+# En AWS se fija a arm64 (nodos Graviton). Vacío para pruebas locales.
+nodeSelector: {}

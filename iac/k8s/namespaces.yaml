@@ -1,0 +1,10 @@
+# Dos entornos en el mismo clúster, aislados por namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod

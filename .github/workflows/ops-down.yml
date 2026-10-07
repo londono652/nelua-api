@@ -1,0 +1,63 @@
+name: ops-down
+
+# Uso personal (fuera del reto): apaga lo que cuesta por hora.
+# Destruye el stack platform (EKS, nodos, VPC, NAT, ALB, WAF y registros DNS).
+# No toca bootstrap ni persistent: se conservan imágenes, certificado, secretos y estado.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+  PROJECT: nelua-api
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  destroy:
+    name: Destruir el stack platform
+    runs-on: ubuntu-24.04
+    environment: infra
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.4"
+          terraform_wrapper: false
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
+      # Primero se retiran las cargas y el pool de nodos, para que EKS Auto Mode
+      # termine sus instancias antes de borrar el clúster y la red.
+      - name: Vaciar el clúster
+        continue-on-error: true
+        run: |
+          cluster=$(aws ssm get-parameter --name "/$PROJECT/eks/cluster-name" \
+            --query Parameter.Value --output text)
+          aws eks update-kubeconfig --name "$cluster"
+          helm uninstall nelua-api --namespace staging --ignore-not-found --wait
+          helm uninstall nelua-api --namespace prod --ignore-not-found --wait
+          helm uninstall kube-prometheus-stack --namespace monitoring --ignore-not-found --wait
+          kubectl delete namespace loadtest --ignore-not-found --wait --timeout=5m
+          kubectl delete -f iac/k8s/nodepool.yaml --ignore-not-found --wait --timeout=10m
+
+      - name: terraform destroy
+        run: |
+          terraform -chdir=iac/stacks/platform init -input=false
+          terraform -chdir=iac/stacks/platform destroy -input=false -auto-approve

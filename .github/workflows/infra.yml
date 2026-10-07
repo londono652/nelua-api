@@ -1,0 +1,192 @@
+name: infra
+
+# Pipeline de infraestructura, por etapas:
+#
+#   1 · Validación ─┐
+#                   ├─> 3 · Plan ─> 4 · Apply ─> 5 · Configuración del clúster
+#   2 · Seguridad  ─┘               (aprobación)
+#
+# Pull request -> etapas 1 a 3; el plan se publica como comentario (no crea nada).
+# Push a main  -> todas las etapas.
+on:
+  pull_request:
+    paths:
+      - "iac/**"
+      - ".github/workflows/infra.yml"
+  push:
+    branches: [main]
+    paths:
+      - "iac/**"
+      - ".github/workflows/infra.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Nunca dos ejecuciones de Terraform a la vez sobre la misma infraestructura.
+concurrency:
+  group: infra
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+  PROJECT: nelua-api
+  TF_IN_AUTOMATION: "true"
+  TERRAFORM_VERSION: "1.16.4"
+
+jobs:
+  # ───────────────────────── Etapa 1 ─────────────────────────
+  validate:
+    name: 1 · Validación
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Formato (terraform fmt)
+        run: terraform fmt -check -recursive iac/stacks
+
+      - name: Validación (terraform validate)
+        run: |
+          for stack in bootstrap persistent platform; do
+            echo "::group::$stack"
+            terraform -chdir="iac/stacks/$stack" init -backend=false -input=false
+            terraform -chdir="iac/stacks/$stack" validate
+            echo "::endgroup::"
+          done
+
+  # ───────────────────────── Etapa 2 ─────────────────────────
+  security:
+    name: 2 · Seguridad de la IaC
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Análisis de seguridad (checkov)
+        run: |
+          pip install --quiet checkov
+          checkov --directory iac/stacks --framework terraform \
+            --config-file iac/.checkov.yaml --compact --quiet
+
+  # ───────────────────────── Etapa 3 ─────────────────────────
+  plan:
+    name: 3 · Plan (${{ matrix.stack }})
+    needs: [validate, security]
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write # autenticación en AWS por OIDC
+      contents: read
+      pull-requests: write # publicar el plan como comentario
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [persistent, platform]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform plan
+        run: |
+          terraform -chdir="iac/stacks/${{ matrix.stack }}" init -input=false
+          terraform -chdir="iac/stacks/${{ matrix.stack }}" plan -input=false -no-color | tee plan.txt
+
+      - name: Resumen del plan
+        run: |
+          summary=$(grep -E '^(Plan:|No changes)' plan.txt | tail -1 || true)
+          {
+            echo "### Plan del stack \`${{ matrix.stack }}\`"
+            echo
+            echo "**${summary:-Sin resumen}**"
+            echo
+            echo "<details><summary>Ver el plan completo</summary>"
+            echo
+            echo '```'
+            tail -c 60000 plan.txt
+            echo '```'
+            echo
+            echo "</details>"
+          } > comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar el plan en el pull request
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
+
+  # ───────────────────────── Etapa 4 ─────────────────────────
+  apply:
+    name: 4 · Apply
+    needs: plan
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    # El environment "infra" exige aprobación manual antes de aplicar.
+    environment: infra
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Apply del stack persistent (ECR, certificado, secretos, contrato)
+        run: |
+          terraform -chdir=iac/stacks/persistent init -input=false
+          terraform -chdir=iac/stacks/persistent apply -input=false -auto-approve
+
+      # Interruptor de costo: la plataforma solo se crea cuando PLATFORM_ENABLED es "true".
+      - name: Apply del stack platform (VPC, EKS, ALB, WAF, DNS, IAM, alarmas)
+        if: vars.PLATFORM_ENABLED == 'true'
+        run: |
+          terraform -chdir=iac/stacks/platform init -input=false
+          terraform -chdir=iac/stacks/platform apply -input=false -auto-approve
+
+      - name: Plataforma apagada
+        if: vars.PLATFORM_ENABLED != 'true'
+        run: echo "PLATFORM_ENABLED no es 'true'; el stack platform no se aplicó." >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────── Etapa 5 ─────────────────────────
+  cluster:
+    name: 5 · Configuración del clúster
+    needs: apply
+    if: vars.PLATFORM_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
+      - name: Namespaces, nodos, permisos, enlace con el ALB y monitoreo
+        run: bash iac/scripts/apply-k8s.sh

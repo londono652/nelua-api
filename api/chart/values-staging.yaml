@@ -1,0 +1,12 @@
+environment: staging
+
+sources:
+  cluster: kubernetes
+  budget: aws
+
+autoscaling:
+  minReplicas: 2
+  maxReplicas: 4
+
+nodeSelector:
+  kubernetes.io/arch: arm64

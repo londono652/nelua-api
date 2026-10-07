@@ -1,0 +1,62 @@
+name: rollback
+
+# Rollback manual (nivel 3): devuelve un entorno a una revisión anterior sin
+# construir ni publicar nada. Para cuando el problema aparece después de que el
+# pipeline terminó en verde.
+#
+#   Actions -> rollback -> Run workflow -> elegir entorno (y revisión, opcional)
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Entorno a revertir
+        type: choice
+        options: [staging, prod]
+        required: true
+      revision:
+        description: Revisión de Helm a la que volver (vacío = la anterior)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+  PROJECT: nelua-api
+
+jobs:
+  rollback:
+    name: Rollback de ${{ inputs.environment }}
+    runs-on: ubuntu-24.04
+    # En prod pide la misma aprobación que un despliegue.
+    environment: ${{ inputs.environment }}
+    # Comparte el candado con el despliegue: nunca corren a la vez.
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APP_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
+      - name: Revertir y verificar
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          TARGET_REVISION: ${{ inputs.revision }}
+        run: |
+          if [ -n "$TARGET_REVISION" ] && ! [[ "$TARGET_REVISION" =~ ^[0-9]+$ ]]; then
+            echo "La revisión debe ser un número (ver 'helm history')." >&2
+            exit 1
+          fi
+          bash cicd/scripts/rollback.sh "$TARGET_ENVIRONMENT" "$TARGET_REVISION"

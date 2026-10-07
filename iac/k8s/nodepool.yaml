@@ -1,0 +1,34 @@
+# Pool de nodos para la API: Graviton (arm64), con Spot y On-Demand.
+# EKS Auto Mode elige el tipo de instancia, crea los nodos cuando hay pods
+# pendientes y los elimina cuando sobran.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: graviton
+spec:
+  template:
+    spec:
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: default
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["arm64"]
+        # Spot cuando hay capacidad (más barato); On-Demand como respaldo.
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+        - key: eks.amazonaws.com/instance-category
+          operator: In
+          values: ["c", "m", "r"]
+        - key: eks.amazonaws.com/instance-generation
+          operator: Gt
+          values: ["5"]
+  # Tope de seguridad de costo: el pool nunca pasa de 200 vCPU.
+  limits:
+    cpu: "200"
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 60s
