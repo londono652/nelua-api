@@ -1,0 +1,81 @@
+name: infra · Aplicación
+
+# Aplica el cambio ya revisado, tras aprobación manual, y deja el clúster
+# configurado. Lo llama infra.yml; no se ejecuta solo.
+#
+#   4 · Apply ──> 5 · Configuración del clúster
+#   (aprobación)
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+  PROJECT: nelua-api
+  TF_IN_AUTOMATION: "true"
+  TERRAFORM_VERSION: "1.16.4"
+
+jobs:
+  # ───────────────────────── Etapa 4 ─────────────────────────
+  apply:
+    name: 4 · Apply
+    runs-on: ubuntu-24.04
+    # El environment "infra" exige aprobación manual antes de aplicar.
+    environment: infra
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Apply del stack persistent (ECR, certificado, secretos, contrato)
+        run: |
+          terraform -chdir=iac/stacks/persistent init -input=false
+          terraform -chdir=iac/stacks/persistent apply -input=false -auto-approve
+
+      # Interruptor de costo: la plataforma solo se crea cuando PLATFORM_ENABLED es "true".
+      - name: Apply del stack platform (VPC, EKS, ALB, WAF, DNS, IAM, alarmas)
+        if: vars.PLATFORM_ENABLED == 'true'
+        run: |
+          terraform -chdir=iac/stacks/platform init -input=false
+          terraform -chdir=iac/stacks/platform apply -input=false -auto-approve
+
+      - name: Plataforma apagada
+        if: vars.PLATFORM_ENABLED != 'true'
+        run: echo "PLATFORM_ENABLED no es 'true'; el stack platform no se aplicó." >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────── Etapa 5 ─────────────────────────
+  cluster:
+    name: 5 · Configuración del clúster
+    needs: apply
+    if: vars.PLATFORM_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
+      - name: Namespaces, nodos, permisos, enlace con el ALB y monitoreo
+        run: bash iac/scripts/apply-k8s.sh

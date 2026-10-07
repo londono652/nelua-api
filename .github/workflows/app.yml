@@ -1,271 +1,55 @@
 name: app
 
-# Pipeline de la aplicación, por etapas:
+# Pipeline de la aplicación. Este archivo solo orquesta: cada grupo vive en su
+# propio workflow y aparece como un bloque en el gráfico de la ejecución.
 #
-#   1 · Build y test ──┐
-#                      ├─> 3 · Build de imagen ─> 4 · Push al registry ─> 5 · Deploy a staging ─> 6 · Deploy a producción
-#   2 · Calidad y     ─┘                                                   (rollback automático)    (aprobación + rollback automático)
-#       seguridad
+#   ┌─ CI (app-ci.yml) ──────────────────────────┐   ┌─ CD (app-cd.yml) ──────────────────┐
+#   │ 1 · Build y test ──┐                       │   │                                    │
+#   │                    ├─> 3 · Build de imagen │──>│ 5 · Deploy a staging               │
+#   │ 2 · Calidad y     ─┘   4 · Push al registry│   │ 6 · Deploy a producción            │
+#   │     seguridad                              │   │     (cada uno con rollback)        │
+#   └────────────────────────────────────────────┘   └────────────────────────────────────┘
 #
-# Pull request -> etapas 1 a 3 (no publica ni despliega).
-# Push a main  -> todas las etapas.
+# Pull request -> CI sin publicar la imagen (etapas 1 a 3).
+# Push a main  -> CI completo y, si la plataforma está encendida, CD.
 on:
   pull_request:
     paths:
       - "api/**"
       - "cicd/**"
-      - ".github/workflows/app.yml"
+      - ".github/workflows/app*.yml"
   push:
     branches: [main]
     paths:
       - "api/**"
       - "cicd/**"
-      - ".github/workflows/app.yml"
+      - ".github/workflows/app*.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Evita dos despliegues simultáneos de la misma rama.
+# Evita dos ejecuciones simultáneas de la misma rama.
 concurrency:
   group: app-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  AWS_REGION: us-east-2
-  PROJECT: nelua-api
-  TRIVY_IMAGE: aquasec/trivy:0.75.0
-  LOCAL_IMAGE: nelua-api:${{ github.sha }}
-
 jobs:
-  # ───────────────────────── Etapa 1 ─────────────────────────
-  test:
-    name: 1 · Build y test
-    runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: api
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: api/requirements-dev.txt
-
-      - name: Instalar dependencias
-        run: pip install -r requirements-dev.txt
-
-      - name: Pruebas automatizadas (pytest)
-        run: pytest -q
-
-      - name: Validar el chart de Helm
-        run: |
-          helm lint chart
-          helm template nelua-api chart --values chart/values-prod.yaml > /dev/null
-
-  # ───────────────────────── Etapa 2 ─────────────────────────
-  quality:
-    name: 2 · Calidad y seguridad
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: api/requirements-dev.txt
-
-      - name: Instalar dependencias
-        run: pip install -r api/requirements-dev.txt
-
-      # ruff incluye las reglas de seguridad de bandit (familia "S").
-      - name: Calidad y análisis estático del código (ruff)
-        working-directory: api
-        run: |
-          ruff check .
-          ruff format --check .
-
-      # Falla si una dependencia tiene una vulnerabilidad alta o crítica con
-      # corrección disponible, o si hay un secreto escrito en el repositorio.
-      - name: Dependencias vulnerables y secretos en el código (Trivy)
-        run: |
-          docker run --rm -v "$PWD":/src "$TRIVY_IMAGE" fs \
-            --scanners vuln,secret --severity HIGH,CRITICAL --ignore-unfixed \
-            --exit-code 1 /src
-
-  # ───────────────────────── Etapa 3 ─────────────────────────
-  image:
-    name: 3 · Build de imagen
-    needs: [test, quality]
-    # Runner ARM: construye la imagen arm64 de forma nativa (nodos Graviton).
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Construir la imagen
-        run: docker build --build-arg APP_VERSION="$GITHUB_SHA" -t "$LOCAL_IMAGE" api
-
-      # La imagen se analiza ANTES de publicarla: si tiene vulnerabilidades
-      # altas o críticas con corrección disponible, nunca llega al registry.
-      - name: Escanear la imagen (Trivy)
-        run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image \
-            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
-            "$LOCAL_IMAGE"
-
-      # La misma imagen que se probó es la que se publica: se entrega a la
-      # siguiente etapa como artefacto, no se vuelve a construir.
-      - name: Guardar la imagen para la etapa de push
-        if: github.event_name != 'pull_request'
-        run: docker save "$LOCAL_IMAGE" | gzip > image.tar.gz
-
-      - uses: actions/upload-artifact@v4
-        if: github.event_name != 'pull_request'
-        with:
-          name: image
-          path: image.tar.gz
-          retention-days: 1
-
-  # ───────────────────────── Etapa 4 ─────────────────────────
-  push:
-    name: 4 · Push al registry
-    needs: image
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04-arm
+  ci:
+    name: CI
+    uses: ./.github/workflows/app-ci.yml
     permissions:
-      id-token: write # necesario para autenticarse en AWS por OIDC
+      id-token: write # el job de push se autentica en AWS por OIDC
       contents: read
-    outputs:
+
+  cd:
+    name: CD
+    needs: ci
+    # Interruptor: solo se despliega desde main y con la plataforma encendida.
+    if: github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
+    uses: ./.github/workflows/app-cd.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
       image_tag: ${{ github.sha }}
-    steps:
-      - name: Autenticarse en AWS (OIDC, sin llaves guardadas)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_APP_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      # La acción oficial enmascara el token en los logs y cierra la sesión
-      # de Docker al terminar el job.
-      - name: Iniciar sesión en ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: image
-
-      # Los tags de ECR son inmutables: si la imagen de este commit ya existe
-      # (por ejemplo, al re-ejecutar el workflow), no se vuelve a publicar.
-      - name: Publicar la imagen en ECR
-        run: |
-          repo=$(aws ssm get-parameter --name "/$PROJECT/ecr/repository-url" \
-            --query Parameter.Value --output text)
-          if aws ecr describe-images --repository-name "$PROJECT" \
-              --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
-            echo "La imagen $GITHUB_SHA ya está publicada." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          gunzip -c image.tar.gz | docker load
-          docker tag "$LOCAL_IMAGE" "$repo:$GITHUB_SHA"
-          docker push "$repo:$GITHUB_SHA"
-          echo "Publicada \`$repo:$GITHUB_SHA\`." >> "$GITHUB_STEP_SUMMARY"
-
-  # ───────────────────────── Etapa 5 ─────────────────────────
-  deploy-staging:
-    name: 5 · Deploy a staging
-    needs: push
-    # Interruptor: los despliegues se activan cuando la plataforma está encendida.
-    if: vars.DEPLOY_ENABLED == 'true'
-    runs-on: ubuntu-24.04
-    environment: staging
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_APP_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - uses: azure/setup-helm@v4
-        with:
-          version: v4.3.0
-
-      - uses: grafana/setup-k6-action@v1
-
-      # Rollback, nivel 1: si los pods nuevos no quedan listos, Helm deshace
-      # el cambio por sí solo y este paso falla.
-      - name: Desplegar
-        id: deploy
-        run: bash cicd/scripts/deploy.sh staging "${{ needs.push.outputs.image_tag }}"
-
-      - name: Verificar la versión desplegada
-        run: bash cicd/scripts/verify.sh staging "${{ needs.push.outputs.image_tag }}"
-
-      - name: Prueba de humo con carga ligera (k6)
-        run: bash cicd/scripts/smoke.sh staging
-
-      # Rollback, nivel 2: el despliegue terminó, pero la verificación o la
-      # prueba de humo fallaron. Se vuelve a la revisión anterior y el pipeline
-      # queda en rojo: esta versión no avanza a producción.
-      - name: Rollback automático
-        if: failure() && steps.deploy.outcome == 'success'
-        run: bash cicd/scripts/rollback.sh staging "${{ steps.deploy.outputs.previous_revision }}"
-
-      - name: Nota - Helm ya revirtió el despliegue
-        if: failure() && steps.deploy.outcome == 'failure'
-        run: echo "El despliegue no terminó bien y Helm restauró la revisión anterior (--rollback-on-failure)." >> "$GITHUB_STEP_SUMMARY"
-
-  # ───────────────────────── Etapa 6 ─────────────────────────
-  deploy-prod:
-    name: 6 · Deploy a producción
-    needs: [push, deploy-staging]
-    runs-on: ubuntu-24.04
-    # El environment "prod" exige aprobación manual antes de ejecutar este job.
-    environment: prod
-    concurrency:
-      group: deploy-prod
-      cancel-in-progress: false
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_APP_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - uses: azure/setup-helm@v4
-        with:
-          version: v4.3.0
-
-      - uses: grafana/setup-k6-action@v1
-
-      - name: Desplegar
-        id: deploy
-        run: bash cicd/scripts/deploy.sh prod "${{ needs.push.outputs.image_tag }}"
-
-      - name: Verificar la versión desplegada
-        run: bash cicd/scripts/verify.sh prod "${{ needs.push.outputs.image_tag }}"
-
-      - name: Prueba de humo con carga ligera (k6)
-        run: bash cicd/scripts/smoke.sh prod
-
-      # El rollback es un paso del mismo job a propósito: como job aparte
-      # volvería a pedir aprobación, y revertir no debe esperar a nadie.
-      - name: Rollback automático
-        if: failure() && steps.deploy.outcome == 'success'
-        run: bash cicd/scripts/rollback.sh prod "${{ steps.deploy.outputs.previous_revision }}"
-
-      - name: Nota - Helm ya revirtió el despliegue
-        if: failure() && steps.deploy.outcome == 'failure'
-        run: echo "El despliegue no terminó bien y Helm restauró la revisión anterior (--rollback-on-failure)." >> "$GITHUB_STEP_SUMMARY"

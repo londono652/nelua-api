@@ -69,12 +69,14 @@ El detalle y el porqué de cada elección están en [`docs/decisiones.md`](docs/
 
 ## CI/CD
 
-Dos pipelines independientes, cada uno con etapas definidas:
+Dos pipelines independientes, cada uno con grupos y etapas definidas:
 
-- **Aplicación:** build y test → calidad y seguridad → build de imagen → push al
-  registry → deploy a staging → deploy a producción (con aprobación).
-- **Infraestructura:** validación → seguridad → plan → apply (con aprobación) →
-  configuración del clúster.
+| Pipeline | Grupo | Etapas |
+|---|---|---|
+| **Aplicación** | CI | Build y test · Calidad y seguridad · Build de imagen · Push al registry |
+| | CD | Deploy a staging · Deploy a producción (con aprobación) |
+| **Infraestructura** | Revisión | Validación · Seguridad · Plan |
+| | Aplicación | Apply (con aprobación) · Configuración del clúster |
 
 El **rollback** tiene tres niveles: Helm durante el despliegue, un paso automático
 del pipeline si falla la verificación posterior, y un workflow manual. Ver

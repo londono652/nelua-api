@@ -3,11 +3,15 @@
 Dos pipelines independientes en el mismo repositorio. Cada uno se dispara solo
 cuando cambia lo suyo, así un cambio en la API no toca la infraestructura y al revés.
 
-| Pipeline | Se dispara con cambios en | Definición |
-|---|---|---|
-| Aplicación | `api/**`, `cicd/**` | [`.github/workflows/app.yml`](../.github/workflows/app.yml) |
-| Infraestructura | `iac/**` | [`.github/workflows/infra.yml`](../.github/workflows/infra.yml) |
-| Rollback manual | A demanda | [`.github/workflows/rollback.yml`](../.github/workflows/rollback.yml) |
+| Pipeline | Se dispara con cambios en | Grupos | Definición |
+|---|---|---|---|
+| Aplicación | `api/**`, `cicd/**` | **CI** y **CD** | [`app.yml`](../.github/workflows/app.yml) llama a [`app-ci.yml`](../.github/workflows/app-ci.yml) y [`app-cd.yml`](../.github/workflows/app-cd.yml) |
+| Infraestructura | `iac/**` | **Revisión** y **Aplicación** | [`infra.yml`](../.github/workflows/infra.yml) llama a [`infra-review.yml`](../.github/workflows/infra-review.yml) e [`infra-apply.yml`](../.github/workflows/infra-apply.yml) |
+| Rollback manual | A demanda | — | [`rollback.yml`](../.github/workflows/rollback.yml) |
+
+Cada pipeline tiene un archivo que solo orquesta y un workflow reutilizable por
+grupo. Así el gráfico de cada ejecución muestra los grupos como bloques, con sus
+etapas adentro.
 
 > GitHub Actions exige que los workflows vivan en `.github/workflows/`. En esta
 > carpeta está todo lo demás del pipeline: los scripts que ejecutan las etapas
@@ -18,25 +22,32 @@ cuando cambia lo suyo, así un cambio en la API no toca la infraestructura y al 
 
 ```mermaid
 flowchart LR
-  T["1 · Build y test"] --> I["3 · Build de imagen"]
-  Q["2 · Calidad y seguridad"] --> I
-  I --> P["4 · Push al registry"]
-  P --> S["5 · Deploy a staging"]
-  S -->|aprobación manual| PR["6 · Deploy a producción"]
-  S -.->|si falla| RS["Rollback automático"]
-  PR -.->|si falla| RP["Rollback automático"]
+  subgraph CI
+    T["1 · Build y test"] --> I["3 · Build de imagen"]
+    Q["2 · Calidad y seguridad"] --> I
+    I --> P["4 · Push al registry"]
+  end
+  subgraph CD
+    S["5 · Deploy a staging"] -->|aprobación manual| PR["6 · Deploy a producción"]
+    S -.->|si falla| RS["Rollback automático"]
+    PR -.->|si falla| RP["Rollback automático"]
+  end
+  P --> S
 ```
 
-| Etapa | Qué hace | Qué la hace fallar |
-|---|---|---|
-| **1 · Build y test** | Instala dependencias, corre las pruebas (`pytest`) y valida el chart de Helm | Una prueba rota o un chart inválido |
-| **2 · Calidad y seguridad** | `ruff` (estilo, errores y reglas de seguridad de bandit) y Trivy sobre el repositorio (dependencias vulnerables y secretos escritos en el código) | Código que no pasa el linter, una dependencia con vulnerabilidad alta/crítica corregible, o un secreto en el repo |
-| **3 · Build de imagen** | Construye la imagen `arm64` y la escanea con Trivy | Vulnerabilidad alta/crítica corregible en la imagen |
-| **4 · Push al registry** | Publica en ECR la misma imagen que se escaneó, con el SHA del commit como tag | — |
-| **5 · Deploy a staging** | Despliega con Helm, verifica la versión y corre una prueba de humo con k6 | Pods que no arrancan, versión incorrecta, errores o latencia alta |
-| **6 · Deploy a producción** | Igual que staging, tras **aprobación manual** | Lo mismo |
+**CI** termina cuando hay una imagen probada, escaneada y publicada. **CD**
+empieza cuando esa imagen se despliega.
 
-En un pull request corren las etapas 1 a 3: se valida todo, pero no se publica ni se despliega.
+| Grupo | Etapa | Qué hace | Qué la hace fallar |
+|---|---|---|---|
+| CI | **1 · Build y test** | Instala dependencias, corre las pruebas (`pytest`) y valida el chart de Helm | Una prueba rota o un chart inválido |
+| CI | **2 · Calidad y seguridad** | `ruff` (estilo, errores y reglas de seguridad de bandit) y Trivy sobre el repositorio (dependencias vulnerables y secretos escritos en el código) | Código que no pasa el linter, una dependencia con vulnerabilidad alta/crítica corregible, o un secreto en el repo |
+| CI | **3 · Build de imagen** | Construye la imagen `arm64` y la escanea con Trivy | Vulnerabilidad alta/crítica corregible en la imagen |
+| CI | **4 · Push al registry** | Publica en ECR la misma imagen que se escaneó, con el SHA del commit como tag | — |
+| CD | **5 · Deploy a staging** | Despliega con Helm, verifica la versión y corre una prueba de humo con k6 | Pods que no arrancan, versión incorrecta, errores o latencia alta |
+| CD | **6 · Deploy a producción** | Igual que staging, tras **aprobación manual** | Lo mismo |
+
+En un pull request corre CI hasta la etapa 3: se valida todo, pero no se publica ni se despliega.
 
 Decisiones que vale la pena conocer:
 
@@ -89,19 +100,27 @@ servicio muestra la revisión activa con `reactivated: true`.
 
 ```mermaid
 flowchart LR
-  V["1 · Validación"] --> PL["3 · Plan"]
-  SE["2 · Seguridad de la IaC"] --> PL
-  PL -->|aprobación manual| A["4 · Apply"]
-  A --> C["5 · Configuración del clúster"]
+  subgraph Revisión
+    V["1 · Validación"] --> PL["3 · Plan"]
+    SE["2 · Seguridad de la IaC"] --> PL
+  end
+  subgraph Aplicación
+    A["4 · Apply"] --> C["5 · Configuración del clúster"]
+  end
+  PL -->|aprobación manual| A
 ```
 
-| Etapa | Qué hace |
-|---|---|
-| **1 · Validación** | `terraform fmt -check` y `terraform validate` de los tres stacks |
-| **2 · Seguridad de la IaC** | `checkov`; las excepciones están justificadas junto a cada recurso |
-| **3 · Plan** | `terraform plan` por stack; en un pull request se publica como comentario |
-| **4 · Apply** | Tras aprobación manual: stack `persistent` y, si `PLATFORM_ENABLED` es `true`, stack `platform` |
-| **5 · Configuración del clúster** | Namespaces, pool de nodos, permisos de lectura de la API, enlace con el ALB y monitoreo |
+En infraestructura los grupos no se llaman CI y CD porque no se construye ni se
+despliega un artefacto: **Revisión** es todo lo que pasa antes de que alguien
+apruebe (no crea ni modifica nada) y **Aplicación** es el cambio real.
+
+| Grupo | Etapa | Qué hace |
+|---|---|---|
+| Revisión | **1 · Validación** | `terraform fmt -check` y `terraform validate` de los tres stacks |
+| Revisión | **2 · Seguridad de la IaC** | `checkov`; las excepciones están justificadas junto a cada recurso |
+| Revisión | **3 · Plan** | `terraform plan` por stack; en un pull request se publica como comentario |
+| Aplicación | **4 · Apply** | Tras aprobación manual: stack `persistent` y, si `PLATFORM_ENABLED` es `true`, stack `platform` |
+| Aplicación | **5 · Configuración del clúster** | Namespaces, pool de nodos, permisos de lectura de la API, enlace con el ALB y monitoreo |
 
 Para infraestructura el rollback es `git revert` del cambio y un nuevo paso por el
 pipeline: el plan muestra exactamente qué se va a deshacer antes de aprobarlo.

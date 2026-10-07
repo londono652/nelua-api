@@ -1,0 +1,117 @@
+name: app · CD
+
+# Despliegue continuo de la aplicación: toma la imagen que publicó CI y la lleva
+# a staging y, tras aprobación, a producción. Lo llama app.yml; no se ejecuta solo.
+#
+#   5 · Deploy a staging ──> 6 · Deploy a producción
+#       (rollback automático)    (aprobación + rollback automático)
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: Tag de la imagen a desplegar (el SHA del commit)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+  PROJECT: nelua-api
+
+jobs:
+  # ───────────────────────── Etapa 5 ─────────────────────────
+  deploy-staging:
+    name: 5 · Deploy a staging
+    runs-on: ubuntu-24.04
+    environment: staging
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APP_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
+      - uses: grafana/setup-k6-action@v1
+
+      # Rollback, nivel 1: si los pods nuevos no quedan listos, Helm deshace
+      # el cambio por sí solo y este paso falla.
+      - name: Desplegar
+        id: deploy
+        run: bash cicd/scripts/deploy.sh staging "${{ inputs.image_tag }}"
+
+      - name: Verificar la versión desplegada
+        run: bash cicd/scripts/verify.sh staging "${{ inputs.image_tag }}"
+
+      - name: Prueba de humo con carga ligera (k6)
+        run: bash cicd/scripts/smoke.sh staging
+
+      # Rollback, nivel 2: el despliegue terminó, pero la verificación o la
+      # prueba de humo fallaron. Se vuelve a la revisión anterior y el pipeline
+      # queda en rojo: esta versión no avanza a producción.
+      - name: Rollback automático
+        if: failure() && steps.deploy.outcome == 'success'
+        run: bash cicd/scripts/rollback.sh staging "${{ steps.deploy.outputs.previous_revision }}"
+
+      - name: Nota - Helm ya revirtió el despliegue
+        if: failure() && steps.deploy.outcome == 'failure'
+        run: echo "El despliegue no terminó bien y Helm restauró la revisión anterior (--rollback-on-failure)." >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────── Etapa 6 ─────────────────────────
+  deploy-prod:
+    name: 6 · Deploy a producción
+    needs: deploy-staging
+    runs-on: ubuntu-24.04
+    # El environment "prod" exige aprobación manual antes de ejecutar este job.
+    environment: prod
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APP_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Desplegar
+        id: deploy
+        run: bash cicd/scripts/deploy.sh prod "${{ inputs.image_tag }}"
+
+      - name: Verificar la versión desplegada
+        run: bash cicd/scripts/verify.sh prod "${{ inputs.image_tag }}"
+
+      - name: Prueba de humo con carga ligera (k6)
+        run: bash cicd/scripts/smoke.sh prod
+
+      # El rollback es un paso del mismo job a propósito: como job aparte
+      # volvería a pedir aprobación, y revertir no debe esperar a nadie.
+      - name: Rollback automático
+        if: failure() && steps.deploy.outcome == 'success'
+        run: bash cicd/scripts/rollback.sh prod "${{ steps.deploy.outputs.previous_revision }}"
+
+      - name: Nota - Helm ya revirtió el despliegue
+        if: failure() && steps.deploy.outcome == 'failure'
+        run: echo "El despliegue no terminó bien y Helm restauró la revisión anterior (--rollback-on-failure)." >> "$GITHUB_STEP_SUMMARY"

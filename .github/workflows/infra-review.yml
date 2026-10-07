@@ -1,0 +1,112 @@
+name: infra · Revisión
+
+# Todo lo que pasa ANTES de que alguien apruebe un cambio de infraestructura:
+# no crea ni modifica nada. Lo llama infra.yml; no se ejecuta solo.
+#
+#   1 · Validación ─┐
+#                   ├─> 3 · Plan
+#   2 · Seguridad  ─┘
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+  PROJECT: nelua-api
+  TF_IN_AUTOMATION: "true"
+  TERRAFORM_VERSION: "1.16.4"
+
+jobs:
+  # ───────────────────────── Etapa 1 ─────────────────────────
+  validate:
+    name: 1 · Validación
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Formato (terraform fmt)
+        run: terraform fmt -check -recursive iac/stacks
+
+      - name: Validación (terraform validate)
+        run: |
+          for stack in bootstrap persistent platform; do
+            echo "::group::$stack"
+            terraform -chdir="iac/stacks/$stack" init -backend=false -input=false
+            terraform -chdir="iac/stacks/$stack" validate
+            echo "::endgroup::"
+          done
+
+  # ───────────────────────── Etapa 2 ─────────────────────────
+  security:
+    name: 2 · Seguridad de la IaC
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Análisis de seguridad (checkov)
+        run: |
+          pip install --quiet checkov
+          checkov --directory iac/stacks --framework terraform \
+            --config-file iac/.checkov.yaml --compact --quiet
+
+  # ───────────────────────── Etapa 3 ─────────────────────────
+  plan:
+    name: 3 · Plan (${{ matrix.stack }})
+    needs: [validate, security]
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write # autenticación en AWS por OIDC
+      contents: read
+      pull-requests: write # publicar el plan como comentario
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [persistent, platform]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform plan
+        run: |
+          terraform -chdir="iac/stacks/${{ matrix.stack }}" init -input=false
+          terraform -chdir="iac/stacks/${{ matrix.stack }}" plan -input=false -no-color | tee plan.txt
+
+      - name: Resumen del plan
+        run: |
+          summary=$(grep -E '^(Plan:|No changes)' plan.txt | tail -1 || true)
+          {
+            echo "### Plan del stack \`${{ matrix.stack }}\`"
+            echo
+            echo "**${summary:-Sin resumen}**"
+            echo
+            echo "<details><summary>Ver el plan completo</summary>"
+            echo
+            echo '```'
+            tail -c 60000 plan.txt
+            echo '```'
+            echo
+            echo "</details>"
+          } > comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar el plan en el pull request
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
