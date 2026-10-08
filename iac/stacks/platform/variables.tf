@@ -97,3 +97,20 @@ variable "dynamodb_deletion_protection" {
   type        = bool
   default     = true
 }
+
+variable "auth_mode" {
+  description = "Cómo se autentican los clientes: api_key (la API exige X-API-Key) o jwt (Cognito emite tokens y el ALB los valida antes de llegar a los pods)"
+  type        = string
+  default     = "jwt"
+
+  validation {
+    condition     = contains(["api_key", "jwt"], var.auth_mode)
+    error_message = "auth_mode debe ser api_key o jwt."
+  }
+}
+
+variable "api_consumers" {
+  description = "Consumidores de la API con modo jwt: cada uno recibe su propio cliente de Cognito (client credentials)"
+  type        = list(string)
+  default     = ["tablero-plataforma"]
+}

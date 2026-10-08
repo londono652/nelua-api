@@ -169,4 +169,7 @@ Variables, en *Settings > Secrets and variables > Actions > Variables*:
 Environments, en *Settings > Environments*: `staging`, `prod` e `infra`. Los dos
 últimos llevan *Required reviewers*.
 
-En GitHub no hay secretos guardados, ni llaves de AWS ni la API key.
+En GitHub no hay secretos guardados, ni llaves de AWS ni credenciales de la API.
+Para verificar un despliegue, el pipeline lee la API key (staging) o las
+credenciales de su cliente de Cognito (producción) de Secrets Manager, con su rol
+de OIDC, y las oculta en los logs.

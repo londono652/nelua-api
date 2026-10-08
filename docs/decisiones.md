@@ -163,31 +163,69 @@ Todos los errores salen con el mismo formato, el de la RFC 9457
 500 y 503 (todavía no hay datos recolectados). Los errores inesperados no
 muestran detalles internos.
 
-### Autenticación con API key
+### Autenticación: API key en staging, Cognito en producción
 
-Usé API key porque los consumidores son pocos y la API es interna y de solo
-lectura. La llave no está en el código ni en el repositorio. Vive en Secrets
-Manager, hay una por ambiente, la API la vuelve a leer cada 5 minutos (se puede
-rotar sin redesplegar) y la comparación se hace en tiempo constante.
+Hay dos modos y cada ambiente elige el suyo en Terraform (`auth_mode`). El modo
+queda publicado en Parameter Store y el pipeline se lo pasa al chart, así que la
+infraestructura y la aplicación no se pueden desalinear.
 
-Nadie tiene que mandarle la llave a nadie. El recorrido es este:
+**Staging: API key.** Es el ambiente de pruebas, con un solo consumidor (yo y el
+pipeline). La llave no está en el código ni en el repositorio:
 
-1. Terraform genera una llave aleatoria por ambiente y la guarda en Secrets Manager.
-2. El pod la lee con su rol de IAM (Pod Identity). Al chart y al pipeline solo les
-   llega el nombre del secreto, nunca el valor.
-3. Cada consumidor la lee del mismo secreto con su propio permiso de IAM.
-4. La llave viaja en el encabezado `X-API-Key`, siempre sobre HTTPS.
+1. Terraform genera una llave aleatoria por ambiente y la guarda en Secrets Manager
+   (con un atributo de solo escritura: tampoco queda en el estado).
+2. El pod la lee con su rol de IAM (Pod Identity) y la recarga cada 5 minutos, así
+   que se rota sin redesplegar. La comparación es en tiempo constante.
+3. Quien la usa la lee del secreto con su propio permiso de IAM, y CloudTrail deja
+   registro. Viaja en `X-API-Key`, siempre sobre HTTPS.
 
-En la práctica, quien controla el acceso es IAM. Puede usar la API quien tenga
-permiso de leer ese secreto, y CloudTrail deja registro de quién lo leyó. La API
-tiene una dirección en internet porque el reto pide exposición pública, pero eso
-no la deja abierta: sin llave solo responden los endpoints de salud.
+Su limitación es que todos comparten la misma llave, no expira y no dice quién
+llamó. Para staging alcanza; para producción no.
 
-La limitación es que todos comparten el mismo secreto. No expira y no dice quién
-llamó. Lo que haría después es pasar a JWT emitido por Cognito en flujo máquina a
-máquina, con tokens de una hora y un cliente por consumidor, validado en la API o
-en el ALB. No lo metí porque es un componente más que operar y no cambia lo que el
-reto evalúa.
+**Producción: Cognito con client credentials, validado en el ALB.**
+
+```
+consumidor ──1. client_id + secreto──> Cognito /oauth2/token
+           <─2. token (1 hora, scope nelua-api/read)
+           ──3. Authorization: Bearer <token>──> WAF ─> ALB ─> pods
+                                                        │
+                                  4. valida firma, emisor, expiración
+                                     y scope con las llaves públicas
+                                     de Cognito (JWKS) antes de reenviar
+```
+
+- **Un cliente por consumidor** (`api_consumers` en `envs/prod.tfvars`). Si una
+  credencial se filtra, se revoca solo esa, sin afectar a los demás, y se sabe de
+  quién era.
+- **Tokens de una hora.** Un token robado deja de servir solo. El secreto del
+  cliente no viaja en cada petición, solo cuando pide un token nuevo.
+- **La validación la hace el ALB**, con la acción `jwt-validation` (disponible
+  desde noviembre de 2025). Un token inválido se rechaza antes de llegar a los
+  pods: el tráfico sin credenciales no consume capacidad de la API, y la
+  aplicación no cambia (en modo `jwt` deja de pedir la API key). Los pods solo
+  aceptan tráfico que viene del ALB, por el security group.
+- **Sin usuarios.** El pool solo tiene clientes de máquina; nadie se puede
+  registrar.
+- **El pipeline tiene su propio cliente** (`pipeline-verify`). Sus credenciales
+  están en Secrets Manager y el rol del pipeline solo puede leer esas. Con ellas
+  pide un token para verificar cada despliegue.
+- `/healthz` sigue siendo público (solo dice si el servicio vive y qué versión
+  corre), igual que en staging.
+
+Lo que cuesta: Cognito no cobra por cliente, pero sí por token emitido (unos
+0,0023 USD cada uno, sin capa gratuita para máquina a máquina). Con tokens de una
+hora, cada consumidor pide unos 720 al mes: menos de 2 USD.
+
+Lo que queda pendiente:
+
+- El secreto de cada cliente lo genera Cognito y Terraform lo guarda en su
+  estado, que está en un bucket cifrado y privado. Si eso no fuera aceptable, los
+  clientes se crearían fuera de Terraform.
+- El WAF sigue limitando por IP. Limitar por consumidor exigiría leer el
+  `client_id` del token, y el WAF no decodifica JWT; la alternativa sería API
+  Gateway con planes de uso, delante del ALB.
+- Si se suma un consumidor humano (un tablero web), el mismo pool sirve con el
+  flujo de código de autorización.
 
 ## 2. La arquitectura
 
@@ -199,11 +237,11 @@ Hay un diagrama por ambiente. Son el mismo diseño con distintos valores.
 
 | Requisito | Cómo se cumple |
 |---|---|
-| Exposición pública segura | Solo está abierto el puerto 443; el 80 no, porque es una API y no un sitio. TLS 1.2 o superior con certificado de ACM. WAF con límite por IP y reglas administradas de AWS. Los pods no tienen IP pública y solo aceptan tráfico del ALB. La aplicación exige API key. `/metrics` no se entrega desde internet, lo lee Prometheus dentro del clúster. |
+| Exposición pública segura | Solo está abierto el puerto 443; el 80 no, porque es una API y no un sitio. TLS 1.2 o superior con certificado de ACM. WAF con límite por IP y reglas administradas de AWS. Los pods no tienen IP pública y solo aceptan tráfico del ALB. Las peticiones exigen credenciales: API key en staging y un token de Cognito validado por el ALB en producción. `/metrics` no se entrega desde internet, lo lee Prometheus dentro del clúster. |
 | Alta disponibilidad | Tres zonas. En producción hay mínimo tres réplicas repartidas entre ellas, un PodDisruptionBudget y despliegue gradual con `maxUnavailable: 0`. |
 | Escalabilidad a 10.000 RPS | La API no tiene estado y responde desde memoria. El HPA escala por CPU, rápido hacia arriba y lento hacia abajo. EKS Auto Mode agrega nodos cuando hay pods que no caben. La carga hacia GitHub, Kubernetes y DynamoDB no crece con el tráfico. |
 | Tolerancia a fallos | Probes de arranque, readiness y liveness. Apagado ordenado: el pod sigue atendiendo mientras el ALB lo retira. La foto en memoria aísla de fallos de las fuentes y de DynamoDB. DynamoDB replica en tres zonas y tiene respaldo continuo. Nodos Spot con On-Demand de respaldo. |
-| Manejo de secretos | Las API keys y el token de GitHub están en Secrets Manager. Su valor no pasa por el repositorio, el pipeline ni el estado de Terraform. No hay llaves de AWS guardadas: GitHub entra por OIDC y los pods por Pod Identity, con un rol distinto para la API y para el recolector. |
+| Manejo de secretos | Las API keys, las credenciales del cliente de Cognito del pipeline y el token de GitHub están en Secrets Manager. Su valor no pasa por el repositorio, el pipeline ni el estado de Terraform. No hay llaves de AWS guardadas: GitHub entra por OIDC y los pods por Pod Identity, con un rol distinto para la API y para el recolector. |
 | Monitoreo básico | Alarmas de CloudWatch sobre el ALB (5xx, latencia p95 y pods fuera de servicio) con aviso por SNS. Prometheus y Grafana en el clúster. Alarmas de frescura: avisan si el recolector lleva 5 minutos sin sincronizar con GitHub o 2 con el clúster. Cada respuesta trae `meta.stale` y `meta.sync` con el motivo. |
 
 ### El pico de 10.000 RPS
@@ -247,8 +285,8 @@ minutos, que protege contra abuso desde una sola dirección y da por hecho que l
 10.000 RPS vienen de muchos clientes. Si vinieran de pocos consumidores internos
 detrás de las mismas IP, ese límite los bloquearía. Por eso es una variable
 (`waf_rate_limit`) y la prueba de carga exime a sus generadores con
-`load_test_mode`. En producción limitaría por API key y no por IP, para que cada
-consumidor tenga su cuota sin importar desde dónde llama.
+`load_test_mode`. En producción limitaría por consumidor y no por IP, para que cada
+uno tenga su cuota sin importar desde dónde llama.
 
 ### Staging y producción
 
@@ -269,6 +307,7 @@ apagada para no pagar dos clústeres. Encenderla es poner `PROD_ENABLED` en `tru
 | Réplicas de la API | Mínimo 2, máximo 4 | Mínimo 3 repartidas entre zonas, máximo 30 |
 | Balanceador | Sin protección contra borrado, porque se crea y se destruye a demanda | Protegido contra borrado |
 | Alarmas | Creadas, sin destinatario | Con aviso por correo (`alert_email`) |
+| Autenticación | API key (`X-API-Key`) | Cognito, máquina a máquina: un cliente por consumidor, tokens de una hora validados en el ALB |
 | Vida | Se apaga con `ops-down` | Permanente |
 
 Los dos comparten el registro de imágenes, el certificado y la zona DNS. El
@@ -290,8 +329,7 @@ Y hay cosas que dejaría distintas en producción y que no implementé:
 | Access logs del ALB | Desactivados | Activos, con retención corta o muestreo |
 | Endpoint del clúster | Público, protegido por IAM | Restringido a rangos conocidos, o privado |
 | Permisos del pipeline de IaC | `AdministratorAccess`, limitado por la confianza OIDC y la aprobación manual | Un *permission boundary* y un rol de solo lectura para el plan |
-| Límite del WAF | Por IP | Por API key |
-| Autenticación | API key | JWT con Cognito, máquina a máquina |
+| Límite del WAF | Por IP | Por consumidor (API Gateway con planes de uso delante del ALB) |
 | Alertas | Por umbral, en CloudWatch | Por consumo del presupuesto de error |
 | Cifrado | Llaves administradas por AWS | Llaves KMS propias donde haya requisito de cumplimiento |
 
@@ -301,7 +339,7 @@ Y hay cosas que dejaría distintas en producción y que no implementé:
 |---|---|---|---|
 | Cómputo | EKS Auto Mode | ECS Fargate | Fargate da menos trabajo y para un solo servicio habría sido una elección válida. Me fui por EKS porque se parece a lo que corre en producción en la mayoría de equipos de plataforma, y porque la API expone el estado de un clúster. Auto Mode se encarga de nodos, parches y escalado, que es lo más pesado de operar en Kubernetes. |
 | Entrada | ALB con WAF | API Gateway | Con el cómputo en EKS, API Gateway no reemplaza al balanceador. Necesita uno detrás (VPC Link), así que sería una capa más. Cobra por petición, y a 10.000 RPS, aunque sea pocas horas al día, son miles de millones de peticiones al mes: sale órdenes de magnitud más caro que un ALB. Su cuota por defecto es de 10.000 RPS, el mismo número del pico. Pierdo cuotas por consumidor y autenticación en el borde. Si eso fuera un requisito, lo pondría delante del ALB. |
-| Entrada | ALB con WAF | CloudFront delante | Las respuestas sí se podrían cachear unos segundos, pero la API ya responde desde memoria: sería una caché delante de otra caché. Los consumidores son internos, CloudFront cobra por petición y obliga a incluir la API key en la llave de caché. Lo agregaría si la prueba de carga muestra que los pods no alcanzan. |
+| Entrada | ALB con WAF | CloudFront delante | Las respuestas sí se podrían cachear unos segundos, pero la API ya responde desde memoria: sería una caché delante de otra caché. Los consumidores son internos, CloudFront cobra por petición y obliga a incluir la credencial en la llave de caché. Lo agregaría si la prueba de carga muestra que los pods no alcanzan. |
 | Nodos | Auto Mode | Node groups administrados | Hay menos piezas que mantener, porque no instalo Karpenter ni el controlador de balanceadores. Se paga un recargo sobre el precio de las instancias. |
 | Ambientes | Un clúster por ambiente | Un clúster con dos namespaces | Compartir clúster ahorra un plano de control, pero un problema del clúster afecta a los dos ambientes y una actualización de Kubernetes no se puede probar primero en staging. Para no pagar dos, producción queda apagada mientras no se usa. |
 | Almacén compartido | DynamoDB bajo demanda | ElastiCache (Redis) o RDS | Sección 1. Los pods leen cada 5 s, no en cada petición, así que la latencia de Redis no se nota. DynamoDB no tiene servidores que dimensionar y guarda la historia con TTL. |
@@ -333,7 +371,15 @@ vista en `envs/*.tfvars` y en `values-*.yaml`. Como cada ambiente tiene su
 clúster, una actualización de Kubernetes o un cambio en la red se prueban primero
 en staging.
 
-Los secretos están separados. Cada ambiente tiene su API key, su tabla de DynamoDB
+La única diferencia de comportamiento es la autenticación: API key en staging y
+Cognito en producción. Es una concesión consciente, y tiene un costo: la validación
+del token en el ALB no se prueba antes de producción. Cerrarla es una línea
+(`auth_mode = "jwt"` en `envs/staging.tfvars`); el pipeline ya sabe pedir el token
+en los dos modos. La dejé así porque staging es donde pruebo a mano y corro la
+prueba de carga, y con API key es más simple.
+
+Los secretos están separados. Cada ambiente tiene su credencial (API key en
+staging, clientes de Cognito en producción), su tabla de DynamoDB
 y sus roles de IAM, y un pod de staging no puede leer nada de producción. El token
 de GitHub sí es uno solo, porque es de solo lectura y no da acceso a AWS.
 
@@ -449,7 +495,8 @@ apruebe alguien distinto (`prevent_self_review`) y proteger la rama `main`.
 
 ## 4. Con más tiempo
 
-- JWT con Cognito en lugar de API key.
+- Cognito también en staging, para que la autenticación sea idéntica en los dos
+  ambientes. Hoy staging usa API key para que probar sea más simple.
 - Alertas por consumo del presupuesto de error y tracing con OpenTelemetry.
 - Despliegue canary con Argo Rollouts. Hoy el rollback es rápido, pero una versión
   mala alcanza a recibir todo el tráfico antes de que se detecte.

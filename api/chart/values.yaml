@@ -33,7 +33,14 @@ store:
 # Cada cuánto cada pod de la API relee las fotos de DynamoDB.
 snapshotRefreshSeconds: 5
 
-# Autenticación. En AWS se indica el nombre del secreto de Secrets Manager
+# Cómo se autentican los clientes. Lo decide la infraestructura de cada ambiente
+# (Parameter Store: /nelua-api/<ambiente>/auth/mode) y lo pasa el pipeline:
+#   api_key  la API exige X-API-Key (local y staging)
+#   jwt      el ALB valida un token de Cognito y la API no pide llave (producción)
+auth:
+  mode: api_key
+
+# API keys. En AWS se indica el nombre del secreto de Secrets Manager
 # (lo pasa el pipeline, leído de Parameter Store). Vacío para pruebas locales,
 # donde la llave se entrega con extraEnv.
 apiKeys:

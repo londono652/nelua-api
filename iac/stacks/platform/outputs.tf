@@ -42,3 +42,18 @@ output "dynamodb_table" {
   description = "Tabla de DynamoDB que comparten el recolector y la API"
   value       = aws_dynamodb_table.api.name
 }
+
+output "auth_mode" {
+  description = "Cómo se autentican los clientes en este ambiente"
+  value       = var.auth_mode
+}
+
+output "oauth" {
+  description = "Datos públicos para pedir tokens (modo jwt). Los secretos de los clientes no se muestran"
+  value = local.jwt_enabled ? {
+    issuer     = local.jwt_issuer
+    token_url  = "https://${aws_cognito_user_pool_domain.api[0].domain}.auth.${var.region}.amazoncognito.com/oauth2/token"
+    scope      = local.oauth_scope
+    client_ids = { for name, client in aws_cognito_user_pool_client.consumer : name => client.id }
+  } : null
+}

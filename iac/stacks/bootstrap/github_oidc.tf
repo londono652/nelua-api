@@ -136,10 +136,15 @@ data "aws_iam_policy_document" "app_permissions" {
     resources = ["arn:aws:ssm:${var.region}:${local.account_id}:parameter/${var.project}/*"]
   }
 
+  # Credenciales con las que el pipeline verifica cada despliegue: la API key
+  # (staging) o el cliente de Cognito de verificación (producción, modo jwt).
   statement {
-    sid       = "ReadApiKeyForSmokeTests"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = ["arn:aws:secretsmanager:${var.region}:${local.account_id}:secret:${var.project}/*/api-keys-*"]
+    sid     = "ReadCredentialsForSmokeTests"
+    actions = ["secretsmanager:GetSecretValue"]
+    resources = [
+      "arn:aws:secretsmanager:${var.region}:${local.account_id}:secret:${var.project}/*/api-keys-*",
+      "arn:aws:secretsmanager:${var.region}:${local.account_id}:secret:${var.project}/*/oauth-client-verify-*",
+    ]
   }
 
   statement {

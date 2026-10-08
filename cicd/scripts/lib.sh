@@ -30,16 +30,42 @@ deployed_version() {
   helm get values "$RELEASE" --namespace "$NAMESPACE" --all --output json | jq -r '.image.tag'
 }
 
-# Lee la API key del ambiente desde Secrets Manager y la oculta en los logs.
-load_api_key() {
-  local secret
-  secret=$(param "secrets/api-keys-$1")
-  API_KEY=$(aws secretsmanager get-secret-value --secret-id "$secret" \
-    --query SecretString --output text | jq -r '.[0]')
+# Cómo se autentican los clientes en el ambiente: "api_key" o "jwt" (Cognito).
+auth_mode() {
+  param "$1/auth/mode" 2>/dev/null || echo api_key
+}
+
+mask() {
   if [ -n "${GITHUB_ACTIONS:-}" ]; then
-    echo "::add-mask::$API_KEY"
+    echo "::add-mask::$1"
   fi
-  export API_KEY
+}
+
+# Deja en AUTH_HEADER el encabezado con el que se llama a la API del ambiente:
+#   api_key  la llave, leída de Secrets Manager.
+#   jwt      un token de Cognito (client credentials) del cliente de verificación,
+#            cuyas credenciales también están en Secrets Manager.
+# Ni la llave ni el token quedan en los logs.
+load_credentials() {
+  local secret
+  if [ "$(auth_mode "$1")" = "jwt" ]; then
+    secret=$(aws secretsmanager get-secret-value --secret-id "$PROJECT/$1/oauth-client-verify" \
+      --query SecretString --output text)
+    local token
+    token=$(curl -fsS --max-time 10 -X POST "$(jq -r .token_url <<<"$secret")" \
+      -u "$(jq -r .client_id <<<"$secret"):$(jq -r .client_secret <<<"$secret")" \
+      -d grant_type=client_credentials -d "scope=$(jq -r .scope <<<"$secret")" | jq -r .access_token)
+    mask "$token"
+    AUTH_HEADER="Authorization: Bearer $token"
+  else
+    secret=$(param "secrets/api-keys-$1")
+    local key
+    key=$(aws secretsmanager get-secret-value --secret-id "$secret" \
+      --query SecretString --output text | jq -r '.[0]')
+    mask "$key"
+    AUTH_HEADER="X-API-Key: $key"
+  fi
+  export AUTH_HEADER
 }
 
 # Deja un valor disponible para los pasos siguientes del pipeline.

@@ -54,6 +54,8 @@ spec:
               containerPort: {{ .Values.containerPort }}
           env:
             {{- include "nelua-api.commonEnv" . | nindent 12 }}
+            - name: AUTH_MODE
+              value: {{ .Values.auth.mode | quote }}
             - name: SNAPSHOT_REFRESH_SECONDS
               value: {{ .Values.snapshotRefreshSeconds | quote }}
             {{- if .Values.apiKeys.secretId }}

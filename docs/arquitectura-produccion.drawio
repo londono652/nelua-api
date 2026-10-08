@@ -69,7 +69,7 @@
           <mxGeometry x="1207" y="598" width="50" height="50" as="geometry" />
         </mxCell>
         <!-- USUARIOS Y WAF -->
-        <mxCell id="users" value="Usuarios / Internet" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.users;" vertex="1" parent="1">
+        <mxCell id="users" value="Consumidores&lt;br&gt;(un cliente de Cognito c/u)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#232F3E;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=11;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.users;" vertex="1" parent="1">
           <mxGeometry x="45" y="332" width="60" height="60" as="geometry" />
         </mxCell>
         <mxCell id="waf" value="AWS WAF&lt;br&gt;(OWASP + rate limiting,&lt;br&gt;asociado al ALB)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.waf;" vertex="1" parent="1">
@@ -80,7 +80,7 @@
         <mxCell id="natA" value="NAT Gateway&lt;br&gt;(uno por zona)" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.nat_gateway;" vertex="1" parent="1">
           <mxGeometry x="416" y="240" width="44" height="44" as="geometry" />
         </mxCell>
-        <mxCell id="alb" value="Application Load Balancer (multi-AZ)&lt;br&gt;solo HTTPS :443 (ACM) · atiende api.nelua.site&lt;br&gt;protegido contra borrado" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalAlign=middle;html=1;fontSize=10;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.application_load_balancer;labelPosition=right;verticalLabelPosition=middle;align=left;spacingLeft=4;" vertex="1" parent="1">
+        <mxCell id="alb" value="Application Load Balancer (multi-AZ)&lt;br&gt;solo HTTPS :443 (ACM) · atiende api.nelua.site&lt;br&gt;&lt;b&gt;valida el token de Cognito (JWT)&lt;/b&gt; · protegido contra borrado" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalAlign=middle;html=1;fontSize=10;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.application_load_balancer;labelPosition=right;verticalLabelPosition=middle;align=left;spacingLeft=4;" vertex="1" parent="1">
           <mxGeometry x="670" y="340" width="44" height="44" as="geometry" />
         </mxCell>
 
@@ -144,7 +144,7 @@
         <mxCell id="ssm" value="SSM Parameter Store&lt;br&gt;(contrato IaC → app)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.systems_manager;" vertex="1" parent="1">
           <mxGeometry x="1207" y="430" width="50" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="cw" value="CloudWatch + SNSCloudWatch + SNS&lt;br&gt;(alarmas con aviso por correo)lt;brCloudWatch + SNS&lt;br&gt;(alarmas con aviso por correo)gt;(alarmas del ALB y de frescura,CloudWatch + SNS&lt;br&gt;(alarmas con aviso por correo)lt;brCloudWatch + SNS&lt;br&gt;(alarmas con aviso por correo)gt;aviso por correo)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;" vertex="1" parent="1">
+        <mxCell id="cw" value="CloudWatch + SNS&lt;br&gt;(alarmas del ALB y de frescura,&lt;br&gt;aviso por correo)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;" vertex="1" parent="1">
           <mxGeometry x="1207" y="712" width="50" height="50" as="geometry" />
         </mxCell>
         <mxCell id="iam" value="IAM&lt;br&gt;(OIDC de GitHub · Pod Identity)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;" vertex="1" parent="1">
@@ -204,7 +204,7 @@
         </mxCell>
 
         <!-- FLUJO DE LA PETICIÓN -->
-        <mxCell id="e1" value="2. HTTPS" style="html=1;endArrow=block;endFill=1;strokeColor=#232F3E;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="users" target="waf">
+        <mxCell id="e1" value="2. HTTPS + token" style="html=1;endArrow=block;endFill=1;strokeColor=#232F3E;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="users" target="waf">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e0" value="1. DNS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#232F3E;strokeWidth=2;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="users" target="r53">
@@ -289,10 +289,10 @@
 <mxCell id="natC" value="NAT Gateway" style="sketch=0;outlineConnect=0;fontColor=#232F3E;gradientColor=none;fillColor=#8C4FFF;strokeColor=none;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;pointerEvents=1;shape=mxgraph.aws4.nat_gateway;" vertex="1" parent="1">
           <mxGeometry x="926" y="240" width="44" height="44" as="geometry" />
         </mxCell>
-<mxCell id="secrets" value="Secrets Manager&lt;br&gt;(API keys · token de GitHub)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;" vertex="1" parent="1">
+<mxCell id="secrets" value="Secrets Manager&lt;br&gt;(token de GitHub · cliente Cognito del pipeline)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;" vertex="1" parent="1">
           <mxGeometry x="1207" y="514" width="50" height="50" as="geometry" />
         </mxCell>
-<mxCell id="r1" value="lee API keys y token" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#3F8624;strokeWidth=2;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.42;" edge="1" parent="1" source="eks" target="secrets"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1112" y="540" /><mxPoint x="1112" y="539" /></Array></mxGeometry></mxCell>
+<mxCell id="r1" value="lee token de GitHub" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#3F8624;strokeWidth=2;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.42;" edge="1" parent="1" source="eks" target="secrets"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1112" y="540" /><mxPoint x="1112" y="539" /></Array></mxGeometry></mxCell>
         <mxCell id="collector" value="Recolector&lt;br&gt;&lt;span style=&quot;font-weight:normal&quot;&gt;1 réplica&lt;/span&gt;" style="rounded=1;fillColor=#FFF2CC;strokeColor=#B85450;fontSize=10;fontColor=#232F3E;html=1;whiteSpace=wrap;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="730" y="497" width="58" height="45" as="geometry" />
         </mxCell>
@@ -300,13 +300,19 @@
           <mxGeometry x="860" y="866" width="50" height="50" as="geometry" />
         </mxCell>
         <mxCell id="ghApi" value="&lt;b&gt;GitHub API&lt;/b&gt;&lt;br&gt;Deployments" style="rounded=1;fillColor=#24292F;strokeColor=#24292F;fontSize=10;fontColor=#FFFFFF;html=1;whiteSpace=wrap;" vertex="1" parent="1">
-          <mxGeometry x="25" y="606" width="100" height="44" as="geometry" />
+          <mxGeometry x="25" y="664" width="100" height="44" as="geometry" />
         </mxCell>
         <mxCell id="d1" value="recolector escribe&lt;br&gt;pods de la API leen cada 5 s" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;startArrow=block;endFill=1;startFill=1;strokeColor=#C925D1;strokeWidth=2;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.745;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="eks" target="dynamo">
           <mxGeometry relative="1" as="geometry"><mxPoint x="75" y="0" as="offset" /></mxGeometry>
         </mxCell>
-        <mxCell id="d2" value="recolector: deployments cada 60 s&lt;br&gt;(HTTPS, sale por el NAT)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#24292F;strokeWidth=2;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.745;exitDx=0;exitDy=0;" edge="1" parent="1" source="eks" target="ghApi">
+        <mxCell id="d2" value="recolector: deployments cada 60 s&lt;br&gt;(HTTPS, sale por el NAT)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#24292F;strokeWidth=2;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.95;exitDx=0;exitDy=0;" edge="1" parent="1" source="eks" target="ghApi">
           <mxGeometry relative="1" as="geometry"><mxPoint x="0" y="-18" as="offset" /></mxGeometry>
+        </mxCell>
+              <mxCell id="cognito" value="Amazon Cognito&lt;br&gt;(client credentials ·&lt;br&gt;tokens de 1 hora)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cognito;" vertex="1" parent="1">
+          <mxGeometry x="213" y="540" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="eTok" value="0. pide token" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;startArrow=block;endFill=1;startFill=1;strokeColor=#DD344C;strokeWidth=2;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.75;exitDx=0;exitDy=0;" edge="1" parent="1" source="users" target="cognito">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="35" y="565" /></Array></mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>

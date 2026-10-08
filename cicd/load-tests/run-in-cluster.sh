@@ -19,7 +19,7 @@ ENVIRONMENT="${1:-staging}"
 URL="https://$(param "dns/hostname-$ENVIRONMENT")"
 
 connect_cluster "$ENVIRONMENT"
-load_api_key "$ENVIRONMENT"
+load_credentials "$ENVIRONMENT"
 
 if [ "$ENVIRONMENT" != "prod" ]; then
   echo "Subiendo el autoescalado de $ENVIRONMENT a los valores de producción..."
@@ -32,9 +32,10 @@ kubectl create namespace loadtest --dry-run=client -o yaml | kubectl apply -f -
 kubectl create configmap k6-script --namespace loadtest \
   --from-file=load.js="$DIR/load.js" --dry-run=client -o yaml | kubectl apply -f -
 
-# La llave se entrega a los generadores como Secret, no como texto en el Job.
-kubectl create secret generic k6-api-key --namespace loadtest \
-  --from-literal=api-key="$API_KEY" --dry-run=client -o yaml | kubectl apply -f -
+# La credencial (API key o token) se entrega a los generadores como Secret, no
+# como texto en el Job. Un token de Cognito dura una hora: alcanza para la prueba.
+kubectl create secret generic k6-auth --namespace loadtest \
+  --from-literal=auth-header="$AUTH_HEADER" --dry-run=client -o yaml | kubectl apply -f -
 
 # Un Job no se puede modificar: se borra el anterior antes de lanzar otro.
 kubectl delete job k6-load --namespace loadtest --ignore-not-found --wait

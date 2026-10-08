@@ -6,6 +6,6 @@ source "$(dirname "$0")/lib.sh"
 
 ENVIRONMENT="$1"
 URL="https://$(param "dns/hostname-$ENVIRONMENT")"
-load_api_key "$ENVIRONMENT"
+load_credentials "$ENVIRONMENT"
 
-k6 run -e BASE_URL="$URL" -e API_KEY="$API_KEY" "$ROOT/cicd/load-tests/smoke.js"
+k6 run -e BASE_URL="$URL" -e AUTH_HEADER="$AUTH_HEADER" "$ROOT/cicd/load-tests/smoke.js"

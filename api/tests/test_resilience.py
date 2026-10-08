@@ -185,3 +185,11 @@ async def test_a_restarted_collector_remembers_the_last_success(settings):
     assert status["last_success_at"] >= success
     assert status["consecutive_failures"] == 1
     assert "deploys#repo/retirado" not in restarted.sync_status
+
+
+def test_jwt_mode_trusts_the_load_balancer(settings, store, wait_ready):
+    # En producción el ALB valida el token de Cognito; la API no pide llave.
+    jwt = replace(settings, auth_mode="jwt", api_keys=())
+    with TestClient(create_app(jwt, store)) as client:
+        wait_ready(client)
+        assert client.get("/v1/deployments").status_code == 200

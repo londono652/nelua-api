@@ -11,7 +11,7 @@ ENVIRONMENT="$1"
 connect_cluster "$ENVIRONMENT"
 EXPECTED="${2:-$(deployed_version)}"
 URL="https://$(param "dns/hostname-$ENVIRONMENT")"
-load_api_key "$ENVIRONMENT"
+load_credentials "$ENVIRONMENT"
 
 echo "Verificando que $URL sirve la versión $EXPECTED..."
 for attempt in $(seq 1 30); do
@@ -27,12 +27,16 @@ if [ "$version" != "$EXPECTED" ]; then
   exit 1
 fi
 
-# Sin llave debe rechazar; con llave, cada endpoint debe responder 200.
+# Sin credenciales debe rechazar. Con API key responde la API (401); con JWT
+# responde el ALB antes de llegar a los pods (401 o 403).
 status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$URL/v1/repos")
-if [ "$status" != "401" ]; then
-  echo "ERROR: /v1/repos sin API key respondió $status (se esperaba 401)" >&2
-  exit 1
-fi
+case "$status" in
+  401 | 403) ;;
+  *)
+    echo "ERROR: /v1/repos sin credenciales respondió $status (se esperaba 401 o 403)" >&2
+    exit 1
+    ;;
+esac
 
 # Las métricas no deben ser visibles desde internet.
 status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$URL/metrics")
@@ -44,7 +48,7 @@ fi
 # El repo que se verifica es el primero de la lista monitoreada en el chart.
 REPO=$(helm get values "$RELEASE" --namespace "$NAMESPACE" --all --output json | jq -r '.githubRepos[0]')
 for path in /v1/repos "/v1/repos/$REPO/deploys" "/v1/repos/$REPO/deploys/stats" /v1/deployments; do
-  status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "X-API-Key: $API_KEY" "$URL$path")
+  status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "$AUTH_HEADER" "$URL$path")
   echo "  $path -> $status"
   if [ "$status" != "200" ]; then
     echo "ERROR: $path respondió $status" >&2

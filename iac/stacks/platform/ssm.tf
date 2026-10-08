@@ -2,11 +2,13 @@
 #   /nelua-api/<ambiente>/eks/cluster-name
 #   /nelua-api/<ambiente>/alb/target-group-arn
 #   /nelua-api/<ambiente>/dynamodb/table-name
+#   /nelua-api/<ambiente>/auth/mode   (api_key o jwt)
 locals {
   parameters = {
     "eks/cluster-name"     = module.eks.cluster_name
     "alb/target-group-arn" = aws_lb_target_group.api.arn
     "dynamodb/table-name"  = aws_dynamodb_table.api.name
+    "auth/mode"            = var.auth_mode
   }
 }
 

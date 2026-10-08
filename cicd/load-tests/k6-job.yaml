@@ -25,12 +25,12 @@ spec:
           env:
             - name: BASE_URL
               value: "__BASE_URL__" # lo reemplaza run-in-cluster.sh con la URL del ambiente
-            # La llave llega desde un Secret que crea run-in-cluster.sh.
-            - name: API_KEY
+            # La credencial llega desde un Secret que crea run-in-cluster.sh.
+            - name: AUTH_HEADER
               valueFrom:
                 secretKeyRef:
-                  name: k6-api-key
-                  key: api-key
+                  name: k6-auth
+                  key: auth-header
             - name: TARGET_RPS
               value: "2500"
             - name: RAMP

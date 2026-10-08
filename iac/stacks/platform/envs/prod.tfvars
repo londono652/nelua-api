@@ -14,3 +14,8 @@ dynamodb_deletion_protection = true
 
 # Correo que recibe las alarmas de CloudWatch.
 # alert_email = "guardia@ejemplo.com"
+
+# Autenticación con Cognito: cada consumidor tiene su cliente y el ALB valida
+# el token antes de llegar a los pods.
+auth_mode     = "jwt"
+api_consumers = ["tablero-plataforma"]

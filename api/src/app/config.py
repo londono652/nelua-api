@@ -25,6 +25,11 @@ class Settings:
     create_table: bool
 
     # ---------- API ----------
+    # Cómo se autentican los clientes:
+    #   "api_key"  la API exige el encabezado X-API-Key (local y staging).
+    #   "jwt"      el ALB ya validó un token de Cognito antes de dejar pasar la
+    #              petición (producción); la API no vuelve a pedir llave.
+    auth_mode: str
     # Cada cuánto los pods de la API releen la foto desde DynamoDB.
     snapshot_refresh_seconds: int
     api_keys: tuple[str, ...]
@@ -63,6 +68,7 @@ def load_settings() -> Settings:
         table_name=env("TABLE_NAME", "nelua-api-local"),
         dynamodb_endpoint=env("DYNAMODB_ENDPOINT", ""),
         create_table=env("CREATE_TABLE", "false").lower() == "true",
+        auth_mode=env("AUTH_MODE", "api_key"),
         snapshot_refresh_seconds=int(env("SNAPSHOT_REFRESH_SECONDS", "5")),
         api_keys=_csv(env("API_KEYS", "")),
         api_keys_secret_id=env("API_KEYS_SECRET_ID", ""),

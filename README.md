@@ -53,7 +53,9 @@ Los repositorios se configuran en una lista (`githubRepos` en el chart, `GITHUB_
 en local). Un `owner/repo` que no esté en ella responde 404 sin llegar a GitHub. Así
 nadie puede gastar el límite de peticiones del token pidiendo repos al azar.
 
-Los endpoints bajo `/v1` piden el encabezado `X-API-Key`. Todos los errores usan
+Los endpoints bajo `/v1` piden credenciales. En local y staging es el encabezado
+`X-API-Key`. En producción es un token de Cognito (`Authorization: Bearer`), que el
+balanceador valida antes de que la petición llegue a la API. Todos los errores usan
 el mismo formato, el de la RFC 9457 (`application/problem+json`). Cada respuesta
 trae `meta.collected_at` y `meta.stale`, que dicen qué tan reciente es el dato, y
 `meta.sync`, que dice si el recolector está logrando sincronizar con la fuente y,
@@ -90,6 +92,8 @@ En resumen:
   escalan los pods (HPA) y los nodos (EKS Auto Mode). La carga sobre GitHub,
   Kubernetes y DynamoDB no crece con el tráfico: GitHub y Kubernetes los consulta
   solo el recolector, y cada pod lee DynamoDB una vez cada 5 segundos.
+- En producción cada consumidor tiene su cliente de Cognito y pide tokens de una
+  hora; el ALB los valida y rechaza el tráfico sin token antes de llegar a los pods.
 - No hay secretos en el código ni en GitHub. Los pipelines entran a AWS por OIDC,
   los pods usan Pod Identity y las llaves y el token de GitHub están en Secrets
   Manager. La API y el recolector tienen roles distintos: la API solo lee.

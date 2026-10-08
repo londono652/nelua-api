@@ -138,8 +138,36 @@ resource "aws_lb_listener_rule" "block_metrics" {
   }
 }
 
+# /healthz queda público en todos los ambientes: solo dice si el servicio vive y
+# qué versión corre (el pipeline lo usa para verificar el despliegue).
+resource "aws_lb_listener_rule" "health" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 5
+
+  condition {
+    host_header {
+      values = [local.hostname]
+    }
+  }
+
+  condition {
+    path_pattern {
+      values = ["/healthz"]
+    }
+  }
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.api.arn
+  }
+}
+
 # Solo se atienden las peticiones dirigidas al nombre de este ambiente; el resto
 # cae en la respuesta 404 por defecto del listener.
+#
+# Con auth_mode = "jwt" el ALB valida primero el token de Cognito: firma (llaves
+# públicas del pool), emisor, expiración y que traiga el scope nelua-api/read.
+# Si no pasa, la petición se rechaza sin llegar a los pods.
 resource "aws_lb_listener_rule" "api" {
   listener_arn = aws_lb_listener.https.arn
   priority     = 10
@@ -150,8 +178,29 @@ resource "aws_lb_listener_rule" "api" {
     }
   }
 
+  dynamic "action" {
+    for_each = local.jwt_enabled ? [1] : []
+
+    content {
+      type  = "jwt-validation"
+      order = 1
+
+      jwt_validation {
+        issuer        = local.jwt_issuer
+        jwks_endpoint = "${local.jwt_issuer}/.well-known/jwks.json"
+
+        additional_claim {
+          name   = "scope"
+          format = "space-separated-values"
+          values = [local.oauth_scope]
+        }
+      }
+    }
+  }
+
   action {
     type             = "forward"
+    order            = 2
     target_group_arn = aws_lb_target_group.api.arn
   }
 }

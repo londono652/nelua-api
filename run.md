@@ -195,6 +195,25 @@ KEY=$(aws secretsmanager get-secret-value --secret-id nelua-api/staging/api-keys
 curl -s -H "X-API-Key: $KEY" https://api-staging.<dominio>/v1/repos/londono652/nelua-api/deploys/stats
 ```
 
+### Llamar a producción (Cognito)
+
+Producción no usa API key: cada consumidor tiene un cliente de Cognito y pide un
+token de una hora. Los datos públicos (URL del token, scope e ids de los clientes)
+salen en `terraform output oauth` del stack `platform` de producción.
+
+```bash
+POOL=<user_pool_id>   # el que aparece en el issuer de terraform output oauth
+CLIENT=<client_id del consumidor>
+SECRET=$(aws cognito-idp describe-user-pool-client --user-pool-id "$POOL" \
+  --client-id "$CLIENT" --query UserPoolClient.ClientSecret --output text)
+TOKEN=$(curl -s -X POST "<token_url>" -u "$CLIENT:$SECRET" \
+  -d grant_type=client_credentials -d scope=nelua-api/read | jq -r .access_token)
+curl -s -H "Authorization: Bearer $TOKEN" https://api.<dominio>/v1/repos
+```
+
+Para agregar un consumidor, se suma su nombre a `api_consumers` en
+`envs/prod.tfvars` y se aplica. Para revocarlo, se quita de la lista.
+
 ### Operación
 
 | Tarea | Cómo |

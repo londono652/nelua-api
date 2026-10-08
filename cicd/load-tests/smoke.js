@@ -9,7 +9,14 @@ import { check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
 const REPO = __ENV.REPO || 'londono652/nelua-api';
-const params = { headers: { 'X-API-Key': __ENV.API_KEY || '' } };
+// Encabezado de autenticación: AUTH_HEADER ("X-API-Key: ..." o
+// "Authorization: Bearer ...") o, para pruebas locales, API_KEY.
+function authHeaders() {
+  const raw = __ENV.AUTH_HEADER || `X-API-Key: ${__ENV.API_KEY || ''}`;
+  const index = raw.indexOf(':');
+  return { [raw.slice(0, index).trim()]: raw.slice(index + 1).trim() };
+}
+const params = { headers: authHeaders() };
 
 export const options = {
   scenarios: {

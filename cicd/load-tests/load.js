@@ -12,7 +12,14 @@ const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
 const TARGET_RPS = parseInt(__ENV.TARGET_RPS || '10000', 10);
 const RAMP = __ENV.RAMP || '2m';
 const HOLD = __ENV.HOLD || '5m';
-const HEADERS = { 'X-API-Key': __ENV.API_KEY || '' };
+// Encabezado de autenticación: AUTH_HEADER ("X-API-Key: ..." o
+// "Authorization: Bearer ...") o, para pruebas locales, API_KEY.
+function authHeaders() {
+  const raw = __ENV.AUTH_HEADER || `X-API-Key: ${__ENV.API_KEY || ''}`;
+  const index = raw.indexOf(':');
+  return { [raw.slice(0, index).trim()]: raw.slice(index + 1).trim() };
+}
+const HEADERS = authHeaders();
 const REPO = __ENV.REPO || 'londono652/nelua-api';
 
 // Mezcla de tráfico parecida al uso real: tableros que consultan el estado de

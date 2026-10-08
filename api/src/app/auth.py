@@ -36,8 +36,13 @@ class ApiKeyStore:
         self._keys: tuple[str, ...] = settings.api_keys
 
     @property
+    def mode(self) -> str:
+        return self._settings.auth_mode
+
+    @property
     def loaded(self) -> bool:
-        return bool(self._keys)
+        # En modo "jwt" la API no necesita llaves para atender.
+        return self.mode == "jwt" or bool(self._keys)
 
     def is_valid(self, candidate: str) -> bool:
         # compare_digest evita filtrar información por el tiempo de comparación.
@@ -53,7 +58,7 @@ class ApiKeyStore:
 
     async def refresh(self) -> None:
         """Recarga las llaves desde Secrets Manager, si hay un secreto configurado."""
-        if not self._settings.api_keys_secret_id:
+        if self.mode == "jwt" or not self._settings.api_keys_secret_id:
             return
         keys = await asyncio.to_thread(self._fetch_secret)
         if keys:
@@ -71,8 +76,14 @@ class ApiKeyStore:
 
 
 def require_api_key(request: Request) -> None:
-    """Dependencia de FastAPI: rechaza la petición si no trae una llave válida."""
+    """Dependencia de FastAPI: rechaza la petición si no trae una llave válida.
+
+    En modo "jwt" no hace nada: el ALB ya validó el token de Cognito, y los pods
+    solo aceptan tráfico que viene del ALB (security group).
+    """
     store: ApiKeyStore = request.app.state.api_keys
+    if store.mode == "jwt":
+        return
     candidate = request.headers.get(API_KEY_HEADER, "")
     if not candidate or not store.is_valid(candidate):
         raise ApiError(
