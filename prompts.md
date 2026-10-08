@@ -42,6 +42,16 @@ Sobre qué debía exponer la API:
 > obtener información y meterle data dummy; ahí mismo dice que es para un equipo
 > de infra."
 
+Más adelante cambié el enfoque de la API. Sentía que leer solo el clúster se
+quedaba corto para el reto de los 10.000 RPS, porque no había nada que cachear:
+
+> "Voy a cambiar el enfoque de la API: últimos deploys en GitHub de mi repo, tasa
+> de éxito de los deploys y estado de los deployments por namespace. Todos van
+> contra fuentes externas. ¿Cómo lo modelamos para consumir esas APIs y exponer la
+> información, pero guardando y cacheando para soportar los 10k que piden?"
+>
+> "En los de GitHub también debe ser parametrizable por owner y repo."
+
 Y sobre el pipeline:
 
 > "El rollback sí debe estar como paso en el pipeline y mostrar bien la estrategia."
@@ -54,7 +64,13 @@ Y sobre el pipeline:
 La IA tiende a proponer de más, y buena parte de mi trabajo fue recortar.
 
 Propuso Redis y DynamoDB al mismo tiempo. Le pregunté para qué los dos y no había
-una buena razón. Al final la API no tiene base de datos.
+una buena razón. Al principio la API no tuvo base de datos. Cuando cambié el
+enfoque a GitHub sí hizo falta guardar historia, y quedó solo DynamoDB: los pods
+leen cada 5 segundos, no en cada petición, así que Redis no aportaba.
+
+Cuando pedí que fuera parametrizable por `owner/repo`, la primera idea era aceptar
+cualquier repo. Lo dejamos con una lista cerrada, porque si no cualquiera podía
+agotar el límite del token de GitHub pidiendo repos al azar.
 
 Propuso redirigir HTTP a HTTPS. En una API no tiene sentido abrir el puerto 80, y
 quedó solo HTTPS.

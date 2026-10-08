@@ -45,7 +45,9 @@ class ApiKeyStore:
         return any(hmac.compare_digest(encoded, key.encode()) for key in self._keys)
 
     def _fetch_secret(self) -> tuple[str, ...]:
-        client = boto3.session.Session().client("secretsmanager")
+        client = boto3.session.Session().client(
+            "secretsmanager", region_name=self._settings.aws_region
+        )
         value = client.get_secret_value(SecretId=self._settings.api_keys_secret_id)
         return parse_keys(value["SecretString"])
 

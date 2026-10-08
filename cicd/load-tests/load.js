@@ -13,13 +13,15 @@ const TARGET_RPS = parseInt(__ENV.TARGET_RPS || '10000', 10);
 const RAMP = __ENV.RAMP || '2m';
 const HOLD = __ENV.HOLD || '5m';
 const HEADERS = { 'X-API-Key': __ENV.API_KEY || '' };
+const REPO = __ENV.REPO || 'londono652/nelua-api';
 
-// Mezcla de tráfico parecida al uso real: el panorama es lo más consultado.
+// Mezcla de tráfico parecida al uso real: tableros que consultan el estado de
+// los servicios y los últimos despliegues, y de vez en cuando las métricas.
 const MIX = [
-  { name: 'summary', path: '/v1/summary', weight: 0.5 },
-  { name: 'deployments', path: '/v1/deployments', weight: 0.25 },
-  { name: 'alerts', path: '/v1/alerts', weight: 0.2 },
-  { name: 'budget', path: '/v1/budget', weight: 0.05 },
+  { name: 'deployments', path: '/v1/deployments', weight: 0.4 },
+  { name: 'deploys', path: `/v1/repos/${REPO}/deploys`, weight: 0.35 },
+  { name: 'stats', path: `/v1/repos/${REPO}/deploys/stats`, weight: 0.2 },
+  { name: 'repos', path: '/v1/repos', weight: 0.05 },
 ];
 
 function pick() {

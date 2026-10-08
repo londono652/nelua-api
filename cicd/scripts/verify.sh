@@ -28,9 +28,9 @@ if [ "$version" != "$EXPECTED" ]; then
 fi
 
 # Sin llave debe rechazar; con llave, cada endpoint debe responder 200.
-status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$URL/v1/summary")
+status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$URL/v1/repos")
 if [ "$status" != "401" ]; then
-  echo "ERROR: /v1/summary sin API key respondió $status (se esperaba 401)" >&2
+  echo "ERROR: /v1/repos sin API key respondió $status (se esperaba 401)" >&2
   exit 1
 fi
 
@@ -41,7 +41,9 @@ if [ "$status" != "404" ]; then
   exit 1
 fi
 
-for path in /v1/summary /v1/deployments /v1/alerts /v1/budget; do
+# El repo que se verifica es el primero de la lista monitoreada en el chart.
+REPO=$(helm get values "$RELEASE" --namespace "$NAMESPACE" --all --output json | jq -r '.githubRepos[0]')
+for path in /v1/repos "/v1/repos/$REPO/deploys" "/v1/repos/$REPO/deploys/stats" /v1/deployments; do
   status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "X-API-Key: $API_KEY" "$URL$path")
   echo "  $path -> $status"
   if [ "$status" != "200" ]; then

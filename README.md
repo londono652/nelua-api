@@ -1,8 +1,13 @@
 # nelua-api
 
-API REST para un equipo de infraestructura. Responde tres cosas: qué está roto,
-qué cambió hace poco y cuánto se lleva gastado. Los datos son reales. Los lee del
-clúster de Kubernetes donde corre y de los presupuestos de la cuenta de AWS.
+API REST para un equipo de plataforma. Responde dos preguntas: cómo vienen saliendo
+los despliegues de un repositorio (los últimos y su tasa de éxito, sacados de
+GitHub) y en qué estado están los servicios en Kubernetes, por namespace.
+
+Las fuentes son externas y lentas comparadas con 10.000 RPS, así que la API no las
+consulta en cada petición. Un recolector las lee cada pocos segundos, guarda el
+historial y una foto ya calculada en DynamoDB, y los pods de la API responden
+desde memoria.
 
 Es mi solución al reto técnico *DevOps & Platform Engineering*. La API, la
 infraestructura en AWS y los pipelines funcionan.
@@ -10,7 +15,7 @@ infraestructura en AWS y los pipelines funcionan.
 | Carpeta | Qué hay |
 |---|---|
 | [`api/`](api) | Código en FastAPI, pruebas, `Dockerfile`, `docker-compose.yml` y el chart de Helm |
-| [`iac/`](iac) | Terraform (red, EKS, ALB, WAF, IAM, secretos, alarmas) y los manifiestos del clúster |
+| [`iac/`](iac) | Terraform (red, EKS, ALB, WAF, DynamoDB, IAM, secretos, alarmas) y los manifiestos del clúster |
 | [`cicd/`](cicd) | Scripts de despliegue y rollback, pruebas de carga y la [explicación de los pipelines](cicd/README.md) |
 | [`.github/workflows/`](.github/workflows) | Los pipelines, en GitHub Actions |
 | [`run.md`](run.md) | Cómo correrlo en local y cómo desplegarlo |
@@ -26,26 +31,33 @@ docker compose up --build
 ```
 
 ```bash
-curl -s -H "X-API-Key: cambia-esta-llave-local" localhost:8000/v1/summary
+curl -s -H "X-API-Key: cambia-esta-llave-local" localhost:8000/v1/repos/londono652/nelua-api/deploys/stats
 ```
 
-En local no hay clúster ni cuenta de AWS, así que la API responde con una foto de
-ejemplo. Cuando está desplegada usa las fuentes reales. El detalle está en
-[`run.md`](run.md).
+Levanta tres contenedores: DynamoDB Local, el recolector y la API. En local no hay
+clúster, así que el estado de Kubernetes y los despliegues son datos de ejemplo.
+Los despliegues pueden ser los reales de GitHub cambiando una variable en `.env`.
+El detalle está en [`run.md`](run.md).
 
 ## La API
 
 | Endpoint | Para qué |
 |---|---|
-| `GET /v1/summary` | Panorama general: nodos, servicios por estado, presupuesto y cuántas alertas hay |
-| `GET /v1/alerts` | Problemas activos, ordenados del más grave al menos grave |
-| `GET /v1/deployments` | Qué hay desplegado: réplicas, versión, pods, autoescalado e historial de despliegues |
-| `GET /v1/budget` | Presupuesto de AWS: límite, gasto, pronóstico y estado |
+| `GET /v1/repos` | Repositorios monitoreados y qué tan recientes son sus datos |
+| `GET /v1/repos/{owner}/{repo}/deploys` | Últimos despliegues: ambiente, estado, commit, autor, duración y enlace a la ejecución. Filtros `environment` y `limit` |
+| `GET /v1/repos/{owner}/{repo}/deploys/stats` | Tasa de éxito, tasa de fallos (la de DORA), despliegues por día y duración promedio, en 7 o 30 días (`days`), por ambiente |
+| `GET /v1/deployments` | Estado de los deployments por namespace: réplicas, versión, pods, autoescalado e historial de revisiones (ahí se ven los rollbacks). Filtros `namespace`, `name` y `status` |
 | `GET /healthz`, `/readyz`, `/metrics` | Operación: liveness, readiness y métricas para Prometheus |
+
+Los repositorios se configuran en una lista (`githubRepos` en el chart, `GITHUB_REPOS`
+en local). Un `owner/repo` que no esté en ella responde 404 sin llegar a GitHub. Así
+nadie puede gastar el límite de peticiones del token pidiendo repos al azar.
 
 Los endpoints bajo `/v1` piden el encabezado `X-API-Key`. Todos los errores usan
 el mismo formato, el de la RFC 9457 (`application/problem+json`). Cada respuesta
-trae `meta.collected_at` y `meta.stale`, que dicen qué tan reciente es el dato.
+trae `meta.collected_at` y `meta.stale`, que dicen qué tan reciente es el dato, y
+`meta.sync`, que dice si el recolector está logrando sincronizar con la fuente y,
+si no, por qué. Si deja de sincronizar, también salta una alarma en CloudWatch.
 La documentación interactiva queda en `/docs`.
 
 ## La arquitectura
@@ -75,9 +87,12 @@ En resumen:
 - Hay tres zonas y, en producción, mínimo tres réplicas repartidas entre ellas.
   Los despliegues no tumban el servicio.
 - La API no tiene estado y responde desde memoria. Para llegar a 10.000 RPS
-  escalan los pods (HPA) y los nodos (EKS Auto Mode).
+  escalan los pods (HPA) y los nodos (EKS Auto Mode). La carga sobre GitHub,
+  Kubernetes y DynamoDB no crece con el tráfico: GitHub y Kubernetes los consulta
+  solo el recolector, y cada pod lee DynamoDB una vez cada 5 segundos.
 - No hay secretos en el código ni en GitHub. Los pipelines entran a AWS por OIDC,
-  la API usa Pod Identity y las llaves están en Secrets Manager.
+  los pods usan Pod Identity y las llaves y el token de GitHub están en Secrets
+  Manager. La API y el recolector tienen roles distintos: la API solo lee.
 
 El porqué de cada cosa está en [`docs/decisiones.md`](docs/decisiones.md).
 

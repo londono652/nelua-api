@@ -37,3 +37,8 @@ output "alerts_topic_arn" {
   description = "Topic de SNS que recibe las alarmas de CloudWatch"
   value       = aws_sns_topic.alerts.arn
 }
+
+output "dynamodb_table" {
+  description = "Tabla de DynamoDB que comparten el recolector y la API"
+  value       = aws_dynamodb_table.api.name
+}

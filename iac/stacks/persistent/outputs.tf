@@ -20,3 +20,8 @@ output "api_keys_secrets" {
   description = "Nombres de los secretos con las API keys (el valor no se muestra)"
   value       = { for env, secret in aws_secretsmanager_secret.api_keys : env => secret.name }
 }
+
+output "github_token_secret" {
+  description = "Secreto donde se guarda a mano el token de GitHub del recolector"
+  value       = aws_secretsmanager_secret.github_token.name
+}

@@ -1,7 +1,9 @@
-# Permisos de la API dentro del clúster: SOLO lectura, y solo de lo que expone.
+# Permisos del recolector dentro del clúster: SOLO lectura, y solo de lo que
+# la API expone. Los pods de la API no tienen ningún permiso sobre Kubernetes:
+# leen lo que el recolector deja en DynamoDB.
 #
 # Los define infraestructura y no el chart de la aplicación: el pipeline de la
-# app no puede crear ni ampliar roles, así que la API no puede darse más
+# app no puede crear ni ampliar roles, así que la aplicación no puede darse más
 # permisos a sí misma en un despliegue.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -13,14 +15,15 @@ rules:
     resources: ["deployments", "replicasets"]
     verbs: ["get", "list"]
   - apiGroups: [""]
-    resources: ["pods", "events"]
+    resources: ["pods"]
     verbs: ["get", "list"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
     verbs: ["get", "list"]
 ---
 # Las cargas se leen solo en el namespace de la aplicación, no en kube-system
-# ni en monitoring.
+# ni en monitoring. Para vigilar otro namespace se agrega aquí un RoleBinding
+# en ese namespace (y el namespace en watchNamespaces del chart).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -32,28 +35,5 @@ roleRef:
   name: nelua-api-workloads-reader
 subjects:
   - kind: ServiceAccount
-    name: nelua-api
-    namespace: nelua-api
----
-# Los nodos no pertenecen a un namespace: el permiso es a nivel de clúster.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: nelua-api-nodes-reader
-rules:
-  - apiGroups: [""]
-    resources: ["nodes"]
-    verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: nelua-api-nodes-reader
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: nelua-api-nodes-reader
-subjects:
-  - kind: ServiceAccount
-    name: nelua-api
+    name: nelua-api-collector
     namespace: nelua-api

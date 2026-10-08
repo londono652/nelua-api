@@ -11,15 +11,27 @@ containerPort: 8000
 # Nombre del ambiente que reporta la API (local, staging, prod).
 environment: local
 
-# De dónde lee los datos la API.
-#   cluster: "kubernetes" (el clúster donde corre) o "sample" (foto de ejemplo)
-#   budget:  "aws" (AWS Budgets), "sample" o "none"
-sources:
-  cluster: kubernetes
-  budget: none
+# Repositorios de GitHub que se monitorean (owner/repo). El recolector los
+# consulta y la API solo responde por estos: cualquier otro devuelve 404.
+# El token de GitHub debe tener permiso de lectura de Deployments en todos.
+githubRepos:
+  - londono652/nelua-api
 
-# Namespaces cuyo estado expone la API. Vacío = solo el namespace donde corre.
+# Ambientes de GitHub que cuentan como despliegues de la aplicación.
+deployEnvironments: [staging, prod]
+
+# Namespaces cuyos deployments se exponen. Vacío = solo el namespace donde corre.
+# Cada namespace extra necesita su RoleBinding en iac/k8s/rbac.yaml.
 watchNamespaces: []
+
+# Tabla de DynamoDB que comparten la API y el recolector. En AWS la pasa el
+# pipeline (leída de Parameter Store). endpoint solo para DynamoDB Local.
+store:
+  tableName: ""
+  endpoint: ""
+
+# Cada cuánto cada pod de la API relee las fotos de DynamoDB.
+snapshotRefreshSeconds: 5
 
 # Autenticación. En AWS se indica el nombre del secreto de Secrets Manager
 # (lo pasa el pipeline, leído de Parameter Store). Vacío para pruebas locales,
@@ -28,7 +40,32 @@ apiKeys:
   secretId: ""
 awsRegion: us-east-2
 
-# Variables adicionales, solo para pruebas locales. Ejemplo:
+collector:
+  enabled: true
+  # "kubernetes"/"github" (reales) o "sample" (datos de ejemplo).
+  sources:
+    cluster: kubernetes
+    github: github
+  clusterRefreshSeconds: 15
+  # 60 s con un repo son ~60-120 peticiones por hora a GitHub (el límite es 5.000).
+  githubRefreshSeconds: 60
+  # Nombre del secreto con el token de GitHub (vacío: sin token, solo pruebas).
+  githubTokenSecretId: nelua-api/github-token
+  # Namespace de CloudWatch donde publica si cada sincronización salió bien. De
+  # ahí salen las alarmas de frescura (iac/stacks/platform/alarms.tf). Vacío: no publica.
+  metricsNamespace: nelua-api
+  # Si el latido es más viejo que esto, Kubernetes reinicia el recolector.
+  heartbeatMaxAgeSeconds: 300
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  extraEnv: []
+
+# Variables adicionales de la API, solo para pruebas locales. Ejemplo:
 #   --set-string 'extraEnv[0].name=API_KEYS,extraEnv[0].value=llave-local'
 extraEnv: []
 

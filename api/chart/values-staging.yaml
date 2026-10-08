@@ -1,10 +1,6 @@
 # Staging: mismo chart y misma imagen que producción, con menos réplicas.
 environment: staging
 
-sources:
-  cluster: kubernetes
-  budget: aws
-
 autoscaling:
   minReplicas: 2
   maxReplicas: 4

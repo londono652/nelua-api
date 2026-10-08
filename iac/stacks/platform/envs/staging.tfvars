@@ -10,5 +10,8 @@ nat_per_az = false
 # Staging se crea y se destruye a demanda, así que el balanceador no se protege.
 alb_deletion_protection = false
 
+# Igual con la tabla: el historial se reconstruye desde GitHub al volver a crearla.
+dynamodb_deletion_protection = false
+
 # Se pone en true solo mientras corre la prueba de carga desde dentro del clúster.
 load_test_mode = false

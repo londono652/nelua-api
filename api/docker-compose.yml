@@ -1,12 +1,58 @@
-# Levanta la API en local con un solo comando:
+# Levanta todo en local con un solo comando:
 #
 #   cp .env.example .env
 #   docker compose up --build
 #
-# En local no hay clúster ni cuenta de AWS, así que la API usa la fuente de
-# ejemplo (una foto fija, no datos reales). En el clúster usa las fuentes
-# reales: la API de Kubernetes y AWS Budgets.
+# Son tres contenedores, igual que en el clúster pero sin AWS:
+#   dynamodb   DynamoDB Local (en memoria), en lugar de la tabla de AWS.
+#   collector  El recolector: consulta las fuentes y escribe las fotos.
+#   api        La API: lee las fotos y responde en http://localhost:8000.
+#
+# Por defecto las fuentes son de ejemplo (datos fijos, no reales). Para leer
+# despliegues reales de GitHub, define GITHUB_SOURCE=github y GITHUB_TOKEN en .env.
+
+x-aws-local: &aws-local
+  AWS_REGION: us-east-2
+  # DynamoDB Local acepta cualquier credencial; estas no dan acceso a nada.
+  AWS_ACCESS_KEY_ID: local
+  AWS_SECRET_ACCESS_KEY: local
+  DYNAMODB_ENDPOINT: http://dynamodb:8000
+  TABLE_NAME: nelua-api-local
+  GITHUB_REPOS: ${GITHUB_REPOS:-londono652/nelua-api}
+
+x-hardening: &hardening
+  # Mismas restricciones que en el clúster: sistema de archivos de solo lectura
+  # y sin privilegios adicionales.
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
+  dynamodb:
+    image: amazon/dynamodb-local:2.6.1
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+
+  collector:
+    build:
+      context: .
+      args:
+        APP_VERSION: local
+    command: ["python", "-m", "app.collector"]
+    <<: *hardening
+    tmpfs:
+      - /tmp  # el archivo de latido que revisa la liveness probe
+    environment:
+      <<: *aws-local
+      CREATE_TABLE: "true"
+      CLUSTER_SOURCE: sample
+      GITHUB_SOURCE: ${GITHUB_SOURCE:-sample}
+      # Solo si GITHUB_SOURCE=github. Sale de .env, que no se versiona.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    depends_on:
+      - dynamodb
+
   api:
     build:
       context: .
@@ -14,20 +60,15 @@ services:
         APP_VERSION: local
     ports:
       - "8000:8000"
+    <<: *hardening
     environment:
+      <<: *aws-local
       ENVIRONMENT: local
-      CLUSTER_SOURCE: sample
-      BUDGET_SOURCE: sample
-      # La llave no está en este archivo ni en el código: sale de .env,
-      # que no se versiona. Si falta, compose se detiene con este mensaje.
+      # La llave no está en este archivo ni en el código: sale de .env.
+      # Si falta, compose se detiene con este mensaje.
       API_KEYS: ${API_KEYS:?Define API_KEYS en el archivo .env (copia .env.example)}
-    # Mismas restricciones que en el clúster: sistema de archivos de solo lectura
-    # y sin privilegios adicionales.
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
+    depends_on:
+      - collector
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
       interval: 10s

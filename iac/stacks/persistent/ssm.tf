@@ -14,6 +14,7 @@ locals {
       for env, secret in aws_secretsmanager_secret.api_keys :
       "secrets/api-keys-${env}" => secret.name
     },
+    { "secrets/github-token" = aws_secretsmanager_secret.github_token.name },
   )
 }
 

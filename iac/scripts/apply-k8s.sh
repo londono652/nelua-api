@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deja configurado el clúster de un ambiente con lo que pertenece a la plataforma
-# (no a la app): namespace, pool de nodos, permisos de lectura de la API, el
+# (no a la app): namespace, pool de nodos, permisos de lectura del recolector, el
 # enlace entre el Service y el ALB, y el monitoreo.
 #   uso: bash iac/scripts/apply-k8s.sh <staging|prod>
 #

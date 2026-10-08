@@ -9,5 +9,8 @@ nat_per_az = true
 # El balanceador no se puede borrar por accidente.
 alb_deletion_protection = true
 
+# La tabla tampoco: guarda el historial de despliegues.
+dynamodb_deletion_protection = true
+
 # Correo que recibe las alarmas de CloudWatch.
 # alert_email = "guardia@ejemplo.com"

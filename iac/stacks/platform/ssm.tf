@@ -1,10 +1,12 @@
 # Contrato con el pipeline de la aplicación, por ambiente:
 #   /nelua-api/<ambiente>/eks/cluster-name
 #   /nelua-api/<ambiente>/alb/target-group-arn
+#   /nelua-api/<ambiente>/dynamodb/table-name
 locals {
   parameters = {
     "eks/cluster-name"     = module.eks.cluster_name
     "alb/target-group-arn" = aws_lb_target_group.api.arn
+    "dynamodb/table-name"  = aws_dynamodb_table.api.name
   }
 }
 

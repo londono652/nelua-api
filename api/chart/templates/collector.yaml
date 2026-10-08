@@ -1,0 +1,99 @@
+{{- if .Values.collector.enabled }}
+# Recolector: el único proceso que consulta GitHub y la API de Kubernetes.
+# Escribe en DynamoDB las fotos que leen los pods de la API.
+#
+# Una sola réplica a propósito: la carga sobre las fuentes no depende del
+# tráfico de la API. Si se cae, la API sigue respondiendo con la última foto
+# (marcada como desactualizada) hasta que Kubernetes lo levanta de nuevo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nelua-api-collector
+  labels:
+    {{- include "nelua-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+spec:
+  replicas: 1
+  # Primero baja el viejo y luego sube el nuevo: nunca hay dos recolectores
+  # gastando el rate limit de GitHub a la vez.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "nelua-api.collectorSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nelua-api.labels" . | nindent 8 }}
+        app.kubernetes.io/component: collector
+    spec:
+      # Identidad propia: lee el clúster (iac/k8s/rbac.yaml), escribe en DynamoDB
+      # y lee el token de GitHub (iac/stacks/platform/iam_api.tf).
+      serviceAccountName: nelua-api-collector
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: collector
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "app.collector"]
+          env:
+            {{- include "nelua-api.commonEnv" . | nindent 12 }}
+            - name: CLUSTER_SOURCE
+              value: {{ .Values.collector.sources.cluster | quote }}
+            - name: GITHUB_SOURCE
+              value: {{ .Values.collector.sources.github | quote }}
+            - name: WATCH_NAMESPACES
+              value: {{ join "," (default (list .Release.Namespace) .Values.watchNamespaces) | quote }}
+            - name: DEPLOY_ENVIRONMENTS
+              value: {{ join "," .Values.deployEnvironments | quote }}
+            - name: CLUSTER_REFRESH_SECONDS
+              value: {{ .Values.collector.clusterRefreshSeconds | quote }}
+            - name: GITHUB_REFRESH_SECONDS
+              value: {{ .Values.collector.githubRefreshSeconds | quote }}
+            - name: METRICS_NAMESPACE
+              value: {{ .Values.collector.metricsNamespace | quote }}
+            {{- if .Values.collector.githubTokenSecretId }}
+            # Solo el nombre del secreto: el token se lee de Secrets Manager.
+            - name: GITHUB_TOKEN_SECRET_ID
+              value: {{ .Values.collector.githubTokenSecretId | quote }}
+            {{- end }}
+            {{- with .Values.collector.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.collector.resources | nindent 12 }}
+          # El recolector no expone HTTP: su señal de vida es un archivo que
+          # actualiza en cada vuelta. Si deja de hacerlo (proceso colgado),
+          # Kubernetes lo reinicia.
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import os, sys, time; sys.exit(time.time() - os.path.getmtime('/tmp/collector-heartbeat') > {{ .Values.collector.heartbeatMaxAgeSeconds }})"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # El sistema de archivos es de solo lectura; /tmp es el único lugar escribible.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 10Mi
+{{- end }}

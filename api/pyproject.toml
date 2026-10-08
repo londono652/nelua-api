@@ -1,7 +1,7 @@
 [project]
 name = "nelua-api"
 version = "1.0.0"
-description = "API de estado de infraestructura: clúster de Kubernetes y presupuesto de AWS"
+description = "API de despliegues (GitHub) y estado de los deployments de Kubernetes"
 requires-python = ">=3.12"
 
 [tool.pytest.ini_options]

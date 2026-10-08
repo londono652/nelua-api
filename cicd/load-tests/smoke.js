@@ -8,6 +8,7 @@ import http from 'k6/http';
 import { check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
+const REPO = __ENV.REPO || 'londono652/nelua-api';
 const params = { headers: { 'X-API-Key': __ENV.API_KEY || '' } };
 
 export const options = {
@@ -31,10 +32,10 @@ export const options = {
 
 export default function () {
   const responses = http.batch([
-    ['GET', `${BASE_URL}/v1/summary`, null, params],
+    ['GET', `${BASE_URL}/v1/repos/${REPO}/deploys`, null, params],
     ['GET', `${BASE_URL}/v1/deployments`, null, params],
   ]);
 
-  check(responses[0], { 'summary responde 200': (r) => r.status === 200 });
+  check(responses[0], { 'deploys responde 200': (r) => r.status === 200 });
   check(responses[1], { 'deployments responde 200': (r) => r.status === 200 });
 }

@@ -1,4 +1,4 @@
-"""Modelos del dominio: lo que la API expone sobre el clúster y el presupuesto."""
+"""Modelos: lo que la API expone sobre despliegues y sobre el clúster."""
 
 from datetime import datetime
 from typing import Literal
@@ -6,8 +6,53 @@ from typing import Literal
 from pydantic import BaseModel
 
 DeploymentStatus = Literal["healthy", "progressing", "degraded", "unavailable", "scaled_down"]
-BudgetStatus = Literal["ok", "warning", "exceeded"]
-Severity = Literal["critical", "warning", "info"]
+DeployStatus = Literal["success", "failure", "in_progress"]
+
+
+# ---------- Despliegues (GitHub) ----------
+
+
+class Deploy(BaseModel):
+    """Un despliegue registrado en GitHub por el pipeline (GitHub Deployments)."""
+
+    id: int
+    environment: str
+    status: DeployStatus
+    # Estado tal como lo reporta GitHub (success, failure, error, inactive, ...).
+    github_state: str
+    sha: str
+    ref: str
+    creator: str | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
+    duration_seconds: int | None = None
+    run_url: str | None = None
+
+    @property
+    def final(self) -> bool:
+        return self.status != "in_progress"
+
+
+class DeployStats(BaseModel):
+    """Métricas de despliegue de un ambiente en una ventana de tiempo."""
+
+    environment: str
+    window_days: int
+    total: int
+    succeeded: int
+    failed: int
+    in_progress: int
+    # Porcentaje de despliegues terminados que salieron bien (0 a 100).
+    success_rate: float | None
+    # Lo inverso, con el nombre que usan las métricas DORA.
+    change_failure_rate: float | None
+    deploys_per_day: float
+    avg_duration_seconds: int | None
+    last_success_at: datetime | None
+    last_failure_at: datetime | None
+
+
+# ---------- Clúster (Kubernetes) ----------
 
 
 class Replicas(BaseModel):
@@ -35,55 +80,13 @@ class Pod(BaseModel):
     started_at: datetime | None = None
 
 
-class Deployment(BaseModel):
-    namespace: str
-    name: str
-    status: DeploymentStatus
-    replicas: Replicas
-    image: str
-    version: str
-    updated_at: datetime | None = None
-    autoscaling: Autoscaling | None = None
-
-
-class DeploymentDetail(Deployment):
-    pods: list[Pod] = []
-
-
-class Node(BaseModel):
-    name: str
-    ready: bool
-    zone: str | None = None
-    instance_type: str | None = None
-    architecture: str | None = None
-    capacity_type: str | None = None
-    node_pool: str | None = None
-    kubelet_version: str | None = None
-    created_at: datetime | None = None
-
-
-class Money(BaseModel):
-    amount: float
-    unit: str
-
-
-class Budget(BaseModel):
-    name: str
-    period: str
-    limit: Money
-    actual_spend: Money
-    forecasted_spend: Money | None = None
-    percent_used: float
-    status: BudgetStatus
-
-
 class RevisionReplicas(BaseModel):
     desired: int
     ready: int
 
 
 class Revision(BaseModel):
-    """Un despliegue: cada cambio de versión deja una revisión en el clúster."""
+    """Una revisión del deployment: cada versión desplegada deja una."""
 
     namespace: str
     deployment: str
@@ -98,51 +101,47 @@ class Revision(BaseModel):
     replicas: RevisionReplicas
 
 
-class ClusterEvent(BaseModel):
-    """Evento de tipo Warning reportado por Kubernetes."""
-
+class Deployment(BaseModel):
     namespace: str
-    kind: str
     name: str
-    reason: str
-    message: str
-    count: int = 1
-    last_seen: datetime | None = None
+    status: DeploymentStatus
+    replicas: Replicas
+    image: str
+    version: str
+    updated_at: datetime | None = None
+    autoscaling: Autoscaling | None = None
+    pods: list[Pod] = []
 
 
-class AlertResource(BaseModel):
-    kind: str
-    name: str
-    namespace: str | None = None
-
-
-class Alert(BaseModel):
-    id: str
-    severity: Severity
-    code: str
-    resource: AlertResource
-    message: str
-    since: datetime | None = None
+class DeploymentView(Deployment):
+    history: list[Revision] = []
 
 
 class ClusterState(BaseModel):
-    """Resultado de una recolección completa del clúster."""
-
-    deployments: list[DeploymentDetail]
-    nodes: list[Node]
+    deployments: list[Deployment]
     revisions: list[Revision] = []
-    events: list[ClusterEvent] = []
 
 
 # ---------- Respuestas ----------
 
 
+class SyncStatus(BaseModel):
+    """Cómo le fue al recolector en sus últimos intentos con esta fuente."""
+
+    last_attempt_at: datetime | None
+    last_success_at: datetime | None
+    consecutive_failures: int
+    # Por qué falló el último intento (None si salió bien).
+    error: str | None
+
+
 class Meta(BaseModel):
-    """Qué tan fresco es el dato: cuándo se tomó y si está desactualizado."""
+    """Qué tan reciente es el dato: cuándo lo tomó el recolector y si está viejo."""
 
     collected_at: datetime | None
     stale: bool
     source: str
+    sync: SyncStatus | None = None
 
 
 class Problem(BaseModel):
@@ -155,64 +154,16 @@ class Problem(BaseModel):
     instance: str | None = None
 
 
-class DeploymentView(DeploymentDetail):
-    """Un servicio completo: estado, pods, autoescalado e historial de despliegues."""
+class DeployList(BaseModel):
+    data: list[Deploy]
+    meta: Meta
 
-    history: list[Revision] = []
+
+class DeployStatsList(BaseModel):
+    data: list[DeployStats]
+    meta: Meta
 
 
 class DeploymentList(BaseModel):
     data: list[DeploymentView]
     meta: Meta
-
-
-class BudgetList(BaseModel):
-    data: list[Budget]
-    meta: Meta
-
-
-class SummaryMeta(BaseModel):
-    cluster: Meta
-    budget: Meta
-
-
-class AlertList(BaseModel):
-    data: list[Alert]
-    meta: SummaryMeta
-
-
-class AlertSummary(BaseModel):
-    total: int
-    by_severity: dict[str, int]
-
-
-class NodeSummary(BaseModel):
-    total: int
-    ready: int
-    by_zone: dict[str, int]
-    by_capacity_type: dict[str, int]
-    items: list[Node]
-
-
-class DeploymentSummary(BaseModel):
-    total: int
-    by_status: dict[str, int]
-
-
-class BudgetSummary(BaseModel):
-    status: BudgetStatus | None
-    budgets: int
-    highest_percent_used: float | None
-
-
-class Summary(BaseModel):
-    environment: str
-    nodes: NodeSummary
-    deployments: DeploymentSummary
-    budget: BudgetSummary
-    alerts: AlertSummary
-
-
-class SummaryResponse(BaseModel):
-    data: Summary
-    meta: SummaryMeta

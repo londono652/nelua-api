@@ -91,12 +91,15 @@ Sobre el nivel 2:
 - Es un paso dentro del mismo job. Si fuera un job aparte en `prod`, volvería a
   pedir aprobación, y revertir no debería esperar a nadie.
 
-El rollback no cubre cambios de datos. Esta API es de solo lectura y no tiene base
-de datos, así que no hay migraciones que deshacer. Si las hubiera, tendrían que
-ser compatibles hacia atrás para que revertir el código siguiera siendo seguro.
+El rollback no cubre cambios de datos. Lo único que guarda la aplicación es el
+historial de despliegues y las fotos en DynamoDB, sin esquema ni migraciones: una
+versión anterior lee lo mismo. Si algún día hubiera migraciones, tendrían que ser
+compatibles hacia atrás para que revertir el código siguiera siendo seguro.
 
-Un rollback se puede ver desde la API. En `GET /v1/deployments`, el historial del
-servicio muestra la revisión activa con `reactivated: true`.
+Un rollback se ve desde la propia API. En `GET /v1/deployments`, el historial del
+servicio muestra la revisión activa con `reactivated: true`. Y en
+`GET /v1/repos/{owner}/{repo}/deploys` aparece el despliegue que falló, que cuenta
+en la tasa de fallos de `/deploys/stats`.
 
 ## Pipeline de infraestructura
 

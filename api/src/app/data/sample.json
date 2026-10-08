@@ -1,4 +1,5 @@
 {
+  "_comment": "Datos de ejemplo para desarrollo local. No son reales. Las fechas de los despliegues se calculan relativas al momento actual (hours_ago).",
   "cluster": {
     "deployments": [
       {
@@ -90,41 +91,6 @@
         ]
       }
     ],
-    "nodes": [
-      {
-        "name": "sample-node-a",
-        "ready": true,
-        "zone": "us-east-2a",
-        "instance_type": "c7g.large",
-        "architecture": "arm64",
-        "capacity_type": "spot",
-        "node_pool": "graviton",
-        "kubelet_version": "v1.34.0",
-        "created_at": "2026-01-15T13:00:00Z"
-      },
-      {
-        "name": "sample-node-b",
-        "ready": true,
-        "zone": "us-east-2b",
-        "instance_type": "c7g.large",
-        "architecture": "arm64",
-        "capacity_type": "spot",
-        "node_pool": "graviton",
-        "kubelet_version": "v1.34.0",
-        "created_at": "2026-01-15T13:00:00Z"
-      },
-      {
-        "name": "sample-node-c",
-        "ready": true,
-        "zone": "us-east-2c",
-        "instance_type": "m7g.large",
-        "architecture": "arm64",
-        "capacity_type": "on-demand",
-        "node_pool": "graviton",
-        "kubelet_version": "v1.34.0",
-        "created_at": "2026-01-15T13:00:00Z"
-      }
-    ],
     "revisions": [
       {
         "namespace": "nelua-api",
@@ -196,37 +162,160 @@
           "ready": 0
         }
       }
-    ],
-    "events": [
-      {
-        "namespace": "sandbox",
-        "kind": "Pod",
-        "name": "nelua-api-5c4d3e2f1-uvwxy",
-        "reason": "FailedScheduling",
-        "message": "0/3 nodes are available: 3 Insufficient cpu.",
-        "count": 4,
-        "last_seen": "2026-01-15T16:05:30Z"
-      }
     ]
   },
-  "budgets": [
-    {
-      "name": "sample-monthly-budget",
-      "period": "monthly",
-      "limit": {
-        "amount": 50.0,
-        "unit": "USD"
+  "deploys": {
+    "londono652/nelua-api": [
+      {
+        "id": 900000,
+        "hours_ago": 1,
+        "environment": "staging",
+        "github_state": "in_progress",
+        "duration_seconds": null,
+        "sha": "9f3c2a1",
+        "ref": "main",
+        "creator": "londono652"
       },
-      "actual_spend": {
-        "amount": 18.4,
-        "unit": "USD"
+      {
+        "id": 900001,
+        "hours_ago": 5,
+        "environment": "prod",
+        "github_state": "success",
+        "duration_seconds": 212,
+        "sha": "7b1e4d0",
+        "ref": "main",
+        "creator": "londono652"
       },
-      "forecasted_spend": {
-        "amount": 41.2,
-        "unit": "USD"
+      {
+        "id": 900002,
+        "hours_ago": 6,
+        "environment": "staging",
+        "github_state": "inactive",
+        "duration_seconds": 184,
+        "sha": "7b1e4d0",
+        "ref": "main",
+        "creator": "londono652"
       },
-      "percent_used": 36.8,
-      "status": "ok"
-    }
-  ]
+      {
+        "id": 900003,
+        "hours_ago": 26,
+        "environment": "staging",
+        "github_state": "failure",
+        "duration_seconds": 95,
+        "sha": "51aa9c3",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900004,
+        "hours_ago": 30,
+        "environment": "prod",
+        "github_state": "inactive",
+        "duration_seconds": 230,
+        "sha": "2c8f6e7",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900005,
+        "hours_ago": 31,
+        "environment": "staging",
+        "github_state": "inactive",
+        "duration_seconds": 190,
+        "sha": "2c8f6e7",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900006,
+        "hours_ago": 75,
+        "environment": "staging",
+        "github_state": "inactive",
+        "duration_seconds": 176,
+        "sha": "e40b912",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900007,
+        "hours_ago": 120,
+        "environment": "prod",
+        "github_state": "error",
+        "duration_seconds": 301,
+        "sha": "d93a5f2",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900008,
+        "hours_ago": 122,
+        "environment": "staging",
+        "github_state": "inactive",
+        "duration_seconds": 201,
+        "sha": "d93a5f2",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900009,
+        "hours_ago": 200,
+        "environment": "staging",
+        "github_state": "inactive",
+        "duration_seconds": 188,
+        "sha": "0a7c3b4",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900010,
+        "hours_ago": 260,
+        "environment": "prod",
+        "github_state": "inactive",
+        "duration_seconds": 225,
+        "sha": "8e2d1f9",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900011,
+        "hours_ago": 262,
+        "environment": "staging",
+        "github_state": "inactive",
+        "duration_seconds": 179,
+        "sha": "8e2d1f9",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900012,
+        "hours_ago": 400,
+        "environment": "staging",
+        "github_state": "failure",
+        "duration_seconds": 88,
+        "sha": "6b5a0c2",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900013,
+        "hours_ago": 410,
+        "environment": "staging",
+        "github_state": "inactive",
+        "duration_seconds": 192,
+        "sha": "3f9e8d7",
+        "ref": "main",
+        "creator": "londono652"
+      },
+      {
+        "id": 900014,
+        "hours_ago": 500,
+        "environment": "prod",
+        "github_state": "inactive",
+        "duration_seconds": 240,
+        "sha": "3f9e8d7",
+        "ref": "main",
+        "creator": "londono652"
+      }
+    ]
+  }
 }

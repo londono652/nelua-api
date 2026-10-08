@@ -1,12 +1,12 @@
 """Fuente real: lee el estado del clúster desde la API de Kubernetes.
 
-Usa la cuenta de servicio del pod (token y CA montados por Kubernetes) con
-permisos de solo lectura sobre deployments, replicasets, pods, autoescaladores,
-eventos y nodos.
+La usa el recolector, con su cuenta de servicio (token y CA montados por
+Kubernetes) y permisos de solo lectura sobre deployments, replicasets, pods y
+autoescaladores.
 Hace unas pocas llamadas GET por ciclo; no depende de librerías pesadas.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,11 +14,9 @@ import httpx
 
 from app.models import (
     Autoscaling,
-    ClusterEvent,
     ClusterState,
-    DeploymentDetail,
+    Deployment,
     DeploymentStatus,
-    Node,
     Pod,
     Replicas,
     Revision,
@@ -100,7 +98,7 @@ def parse_autoscaling(item: dict[str, Any]) -> Autoscaling:
 
 def parse_deployment(
     item: dict[str, Any], pods: list[dict[str, Any]], autoscalers: list[dict[str, Any]]
-) -> DeploymentDetail:
+) -> Deployment:
     metadata, spec, status = item["metadata"], item.get("spec", {}), item.get("status", {})
     desired = spec.get("replicas", 0)
     ready = status.get("readyReplicas", 0)
@@ -123,7 +121,7 @@ def parse_deployment(
             autoscaling = parse_autoscaling(autoscaler)
 
     state: DeploymentStatus = deployment_status(desired, ready, updated, item)  # type: ignore[assignment]
-    return DeploymentDetail(
+    return Deployment(
         namespace=metadata["namespace"],
         name=metadata["name"],
         status=state,
@@ -189,52 +187,6 @@ def parse_revisions(
     return revisions
 
 
-def parse_events(
-    items: list[dict[str, Any]], namespace: str, not_before: datetime
-) -> list[ClusterEvent]:
-    """Eventos Warning recientes, uno por recurso y motivo (el más nuevo)."""
-    latest: dict[tuple[str, str, str], ClusterEvent] = {}
-    for item in items:
-        involved = item.get("involvedObject", {})
-        seen = _parse_time(
-            item.get("lastTimestamp")
-            or (item.get("series") or {}).get("lastObservedTime")
-            or item.get("eventTime")
-            or item.get("metadata", {}).get("creationTimestamp")
-        )
-        if seen is None or seen < not_before:
-            continue
-        event = ClusterEvent(
-            namespace=namespace,
-            kind=involved.get("kind", "Unknown"),
-            name=involved.get("name", "unknown"),
-            reason=item.get("reason", "Unknown"),
-            message=(item.get("message") or "")[:300],
-            count=item.get("count") or (item.get("series") or {}).get("count") or 1,
-            last_seen=seen,
-        )
-        key = (event.kind, event.name, event.reason)
-        if key not in latest or seen > latest[key].last_seen:
-            latest[key] = event
-    return list(latest.values())
-
-
-def parse_node(item: dict[str, Any]) -> Node:
-    metadata = item["metadata"]
-    labels = metadata.get("labels", {})
-    return Node(
-        name=metadata["name"],
-        ready=_condition(item, "Ready").get("status") == "True",
-        zone=labels.get("topology.kubernetes.io/zone"),
-        instance_type=labels.get("node.kubernetes.io/instance-type"),
-        architecture=labels.get("kubernetes.io/arch"),
-        capacity_type=labels.get("karpenter.sh/capacity-type"),
-        node_pool=labels.get("karpenter.sh/nodepool"),
-        kubelet_version=item.get("status", {}).get("nodeInfo", {}).get("kubeletVersion"),
-        created_at=_parse_time(metadata.get("creationTimestamp")),
-    )
-
-
 class KubernetesSource:
     name = "kubernetes"
 
@@ -245,11 +197,9 @@ class KubernetesSource:
         ca_file: str,
         namespaces: tuple[str, ...],
         transport: httpx.AsyncBaseTransport | None = None,
-        events_window_minutes: int = 30,
     ) -> None:
         self._token_file = Path(token_file)
         self._namespaces = namespaces
-        self._events_window = timedelta(minutes=events_window_minutes)
         verify: bool | str = ca_file if transport is None else True
         self._client = httpx.AsyncClient(
             base_url=api_url, verify=verify, timeout=10, transport=transport
@@ -263,10 +213,8 @@ class KubernetesSource:
         return response.json().get("items", [])
 
     async def collect(self) -> ClusterState:
-        deployments: list[DeploymentDetail] = []
+        deployments: list[Deployment] = []
         revisions: list[Revision] = []
-        events: list[ClusterEvent] = []
-        not_before = datetime.now(UTC) - self._events_window
         for namespace in self._namespaces:
             items = await self._list(f"/apis/apps/v1/namespaces/{namespace}/deployments")
             pods = await self._list(f"/api/v1/namespaces/{namespace}/pods")
@@ -274,19 +222,12 @@ class KubernetesSource:
                 f"/apis/autoscaling/v2/namespaces/{namespace}/horizontalpodautoscalers"
             )
             replicasets = await self._list(f"/apis/apps/v1/namespaces/{namespace}/replicasets")
-            warnings = await self._list(
-                f"/api/v1/namespaces/{namespace}/events?fieldSelector=type%3DWarning&limit=200"
-            )
             deployments += [parse_deployment(item, pods, autoscalers) for item in items]
             revisions += parse_revisions(replicasets, items)
-            events += parse_events(warnings, namespace, not_before)
 
-        nodes = [parse_node(item) for item in await self._list("/api/v1/nodes")]
         return ClusterState(
             deployments=sorted(deployments, key=lambda d: (d.namespace, d.name)),
-            nodes=sorted(nodes, key=lambda node: node.name),
             revisions=revisions,
-            events=events,
         )
 
     async def close(self) -> None:

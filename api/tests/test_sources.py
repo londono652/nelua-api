@@ -1,16 +1,12 @@
-"""Traducción de las respuestas de Kubernetes y de AWS Budgets al modelo de la API."""
-
-from datetime import UTC, datetime, timedelta
+"""Traducción de las respuestas de Kubernetes al modelo de la API."""
 
 import httpx
 import pytest
 
 from app.auth import parse_keys
-from app.sources.aws_budgets import AwsBudgetSource, budget_status, parse_budget
 from app.sources.kubernetes import (
     KubernetesSource,
     deployment_status,
-    parse_events,
     parse_revisions,
     split_image,
 )
@@ -77,23 +73,6 @@ AUTOSCALER = {
         ],
     },
 }
-NODE = {
-    "metadata": {
-        "name": "node-a",
-        "creationTimestamp": "2026-10-05T13:00:00Z",
-        "labels": {
-            "topology.kubernetes.io/zone": "us-east-2a",
-            "node.kubernetes.io/instance-type": "c7g.large",
-            "kubernetes.io/arch": "arm64",
-            "karpenter.sh/capacity-type": "spot",
-            "karpenter.sh/nodepool": "graviton",
-        },
-    },
-    "status": {
-        "conditions": [{"type": "Ready", "status": "True"}],
-        "nodeInfo": {"kubeletVersion": "v1.34.1"},
-    },
-}
 
 
 def replicaset(name, revision, tag, created, replicas=0, ready=0, history=None, owner="nelua-api"):
@@ -125,17 +104,6 @@ REPLICASETS = [
 ]
 
 
-def warning_event(name, reason, minutes_ago, message="detalle", count=1):
-    seen = datetime.now(UTC) - timedelta(minutes=minutes_ago)
-    return {
-        "involvedObject": {"kind": "Pod", "name": name},
-        "reason": reason,
-        "message": message,
-        "count": count,
-        "lastTimestamp": seen.isoformat().replace("+00:00", "Z"),
-    }
-
-
 @pytest.fixture
 def token_file(tmp_path):
     path = tmp_path / "token"
@@ -158,12 +126,7 @@ async def test_kubernetes_source_reads_only_the_watched_namespaces(token_file):
             return httpx.Response(200, json={"items": [AUTOSCALER]})
         if path.endswith("/replicasets"):
             return httpx.Response(200, json={"items": REPLICASETS})
-        if path.endswith("/events"):
-            assert request.url.params["fieldSelector"] == "type=Warning"
-            return httpx.Response(
-                200, json={"items": [warning_event("nelua-api-abc", "BackOff", 2)]}
-            )
-        return httpx.Response(200, json={"items": [NODE]})
+        return httpx.Response(404)
 
     source = KubernetesSource(
         "https://kubernetes.test", token_file, "", ("nelua-api",), httpx.MockTransport(handler)
@@ -176,8 +139,6 @@ async def test_kubernetes_source_reads_only_the_watched_namespaces(token_file):
         "/api/v1/namespaces/nelua-api/pods",
         "/apis/autoscaling/v2/namespaces/nelua-api/horizontalpodautoscalers",
         "/apis/apps/v1/namespaces/nelua-api/replicasets",
-        "/api/v1/namespaces/nelua-api/events",
-        "/api/v1/nodes",
     ]
 
     deployment = state.deployments[0]
@@ -188,11 +149,7 @@ async def test_kubernetes_source_reads_only_the_watched_namespaces(token_file):
     assert deployment.autoscaling.desired_replicas == 5
     assert deployment.autoscaling.cpu_current_percent == 85
 
-    node = state.nodes[0]
-    assert (node.ready, node.zone, node.capacity_type) == (True, "us-east-2a", "spot")
-
     assert [r.revision for r in state.revisions] == [5, 4]
-    assert [e.reason for e in state.events] == ["BackOff"]
 
 
 def test_parse_revisions_marks_the_active_one_and_rollbacks():
@@ -204,25 +161,6 @@ def test_parse_revisions_marks_the_active_one_and_rollbacks():
 
     assert (rolled_back.revision, rolled_back.version) == (4, "bad999")
     assert (rolled_back.active, rolled_back.reactivated) == (False, False)
-
-
-def test_parse_events_keeps_recent_ones_and_deduplicates():
-    not_before = datetime.now(UTC) - timedelta(minutes=30)
-    events = parse_events(
-        [
-            warning_event("pod-a", "BackOff", 20, "viejo"),
-            warning_event("pod-a", "BackOff", 1, "nuevo", count=7),
-            warning_event("pod-a", "Unhealthy", 5),
-            warning_event("pod-b", "FailedScheduling", 90),  # fuera de la ventana
-        ],
-        "nelua-api",
-        not_before,
-    )
-    assert sorted((e.name, e.reason, e.message) for e in events) == [
-        ("pod-a", "BackOff", "nuevo"),
-        ("pod-a", "Unhealthy", "detalle"),
-    ]
-    assert events[0].namespace == "nelua-api"
 
 
 async def test_kubernetes_source_propagates_api_errors(token_file):
@@ -281,62 +219,6 @@ def test_deployment_status(desired, ready, updated, conditions, expected):
 )
 def test_split_image(image, version):
     assert split_image(image) == version
-
-
-# ---------- AWS Budgets ----------
-
-AWS_BUDGET = {
-    "BudgetName": "mensual",
-    "TimeUnit": "MONTHLY",
-    "BudgetLimit": {"Amount": "50.0", "Unit": "USD"},
-    "CalculatedSpend": {
-        "ActualSpend": {"Amount": "42.5", "Unit": "USD"},
-        "ForecastedSpend": {"Amount": "61.0", "Unit": "USD"},
-    },
-}
-
-
-def test_parse_budget():
-    budget = parse_budget(AWS_BUDGET)
-    assert budget.percent_used == 85.0
-    assert budget.status == "warning"
-    assert budget.forecasted_spend.amount == 61.0
-
-
-@pytest.mark.parametrize(
-    ("percent", "forecast", "expected"),
-    [
-        (10, 20, "ok"),
-        (80, 45, "warning"),
-        (40, 55, "warning"),
-        (100, 120, "exceeded"),
-        (30, None, "ok"),
-    ],
-)
-def test_budget_status(percent, forecast, expected):
-    assert budget_status(percent, forecast, 50) == expected
-
-
-async def test_aws_budget_source_uses_the_account_of_its_credentials():
-    calls: dict = {}
-
-    class FakeClient:
-        def get_caller_identity(self):
-            return {"Account": "123456789012"}
-
-        def describe_budgets(self, AccountId):  # noqa: N803 (nombre de la API de AWS)
-            calls["account"] = AccountId
-            return {"Budgets": [AWS_BUDGET]}
-
-    class FakeSession:
-        def client(self, service, **kwargs):
-            calls.setdefault("services", []).append((service, kwargs.get("region_name")))
-            return FakeClient()
-
-    budgets = await AwsBudgetSource(FakeSession()).collect()
-    assert calls["account"] == "123456789012"
-    assert ("budgets", "us-east-1") in calls["services"]
-    assert budgets[0].name == "mensual"
 
 
 # ---------- API keys ----------

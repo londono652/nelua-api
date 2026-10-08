@@ -10,19 +10,42 @@ cp .env.example .env          # define la API key local; .env no se versiona
 docker compose up --build
 ```
 
-La API queda en `http://localhost:8000`. Como en local no hay clúster ni cuenta de
-AWS, responde con una foto de ejemplo.
+Levanta tres contenedores, igual que en el clúster pero sin AWS:
+
+- `dynamodb`: DynamoDB Local, en memoria.
+- `collector`: el recolector. Crea la tabla si no existe y escribe las fotos.
+- `api`: la API, en `http://localhost:8000`.
+
+Por defecto los datos son de ejemplo. Los despliegues de ejemplo se fechan
+relativos al momento en que arrancas, para que siempre caigan dentro de las
+ventanas de 7 y 30 días.
 
 ```bash
 KEY=cambia-esta-llave-local
+R=londono652/nelua-api
 
 curl -s localhost:8000/healthz
-curl -si localhost:8000/v1/summary                                  # 401: falta la llave
-curl -s -H "X-API-Key: $KEY" localhost:8000/v1/summary
-curl -s -H "X-API-Key: $KEY" localhost:8000/v1/alerts
+curl -si localhost:8000/v1/repos                                            # 401: falta la llave
+curl -s -H "X-API-Key: $KEY" localhost:8000/v1/repos
+curl -s -H "X-API-Key: $KEY" "localhost:8000/v1/repos/$R/deploys?environment=prod&limit=5"
+curl -s -H "X-API-Key: $KEY" "localhost:8000/v1/repos/$R/deploys/stats?days=7"
 curl -s -H "X-API-Key: $KEY" "localhost:8000/v1/deployments?namespace=nelua-api"
-curl -s -H "X-API-Key: $KEY" localhost:8000/v1/budget
+curl -s -H "X-API-Key: $KEY" localhost:8000/v1/repos/otro/repo/deploys          # 404: no monitoreado
 ```
+
+### Con los despliegues reales de GitHub
+
+En `.env`:
+
+```bash
+GITHUB_SOURCE=github
+GITHUB_REPOS=londono652/nelua-api
+GITHUB_TOKEN=          # opcional para repos públicos
+```
+
+Sin token funciona con repos públicos, pero GitHub permite solo 60 peticiones por
+hora por IP. Alcanza para probar un rato. El recolector hace una por repo cada
+minuto, más una por cada despliegue que siga en curso.
 
 La documentación interactiva está en <http://localhost:8000/docs>.
 
@@ -38,19 +61,27 @@ pytest -q
 
 ### Configuración
 
-La API se configura con variables de entorno. No hay valores sensibles en el código.
+La API y el recolector se configuran con variables de entorno. No hay valores
+sensibles en el código.
 
-| Variable | Para qué | Por defecto |
-|---|---|---|
-| `API_KEYS` | Llaves válidas, separadas por coma (uso local) | (ninguno) |
-| `API_KEYS_SECRET_ID` | Secreto de Secrets Manager con las llaves (en AWS) | (ninguno) |
-| `CLUSTER_SOURCE` | `kubernetes` (real) o `sample` | `sample` |
-| `BUDGET_SOURCE` | `aws` (real), `sample` o `none` | `sample` |
-| `WATCH_NAMESPACES` | Namespaces que se exponen | `nelua-api` |
-| `CLUSTER_REFRESH_SECONDS` | Cada cuánto se consulta el clúster | `15` |
-| `BUDGET_REFRESH_SECONDS` | Cada cuánto se consulta AWS Budgets | `900` |
-| `ALERT_POD_RESTARTS` | Reinicios de un pod a partir de los cuales hay alerta | `3` |
-| `ALERT_MIN_ZONES` | Zonas mínimas con nodos listos | `2` |
+| Variable | Quién la usa | Para qué | Por defecto |
+|---|---|---|---|
+| `TABLE_NAME` | los dos | Tabla de DynamoDB | `nelua-api-local` |
+| `GITHUB_REPOS` | los dos | Repositorios monitoreados (`owner/repo`, separados por coma) | `londono652/nelua-api` |
+| `DYNAMODB_ENDPOINT` | los dos | Solo para DynamoDB Local | (ninguno) |
+| `API_KEYS` | API | Llaves válidas, separadas por coma (uso local) | (ninguno) |
+| `API_KEYS_SECRET_ID` | API | Secreto de Secrets Manager con las llaves (en AWS) | (ninguno) |
+| `SNAPSHOT_REFRESH_SECONDS` | API | Cada cuánto relee las fotos de DynamoDB | `5` |
+| `CLUSTER_SOURCE` | recolector | `kubernetes` (real) o `sample` | `sample` |
+| `GITHUB_SOURCE` | recolector | `github` (real) o `sample` | `sample` |
+| `GITHUB_TOKEN` | recolector | Token de GitHub (uso local) | (ninguno) |
+| `GITHUB_TOKEN_SECRET_ID` | recolector | Secreto con el token de GitHub (en AWS) | (ninguno) |
+| `WATCH_NAMESPACES` | recolector | Namespaces que se exponen | `nelua-api` |
+| `DEPLOY_ENVIRONMENTS` | recolector | Ambientes de GitHub que cuentan como despliegues | `staging,prod` |
+| `CLUSTER_REFRESH_SECONDS` | recolector | Cada cuánto consulta el clúster | `15` |
+| `GITHUB_REFRESH_SECONDS` | recolector | Cada cuánto consulta GitHub | `60` |
+| `CREATE_TABLE` | recolector | Crea la tabla si no existe (solo local) | `false` |
+| `METRICS_NAMESPACE` | recolector | Namespace de CloudWatch para la métrica `SyncSuccess` (vacío: no publica) | (ninguno) |
 
 ## 2. Despliegue en AWS
 
@@ -63,8 +94,8 @@ cambian y por lo que cuestan.
 | Stack | Qué crea | Cómo se aplica | Costo |
 |---|---|---|---|
 | `bootstrap` | Bucket del estado, confianza OIDC con GitHub y zona DNS | A mano, una vez | Centavos |
-| `persistent` | Lo que comparten los ambientes: ECR, certificado y secretos de las API keys | Pipeline | Centavos |
-| `platform` | Un ambiente completo: VPC, EKS, ALB, WAF, IAM de la API y alarmas | Pipeline, una vez por ambiente y con interruptor | Por hora |
+| `persistent` | Lo que comparten los ambientes: ECR, certificado, secretos de las API keys y el del token de GitHub | Pipeline | Centavos |
+| `platform` | Un ambiente completo: VPC, EKS, ALB, WAF, DynamoDB, IAM de la API y del recolector, y alarmas | Pipeline, una vez por ambiente y con interruptor | Por hora |
 
 El stack `platform` se aplica una vez por ambiente. El código es el mismo y cada
 ambiente tiene su archivo de valores y su estado:
@@ -123,7 +154,32 @@ terraform apply -var-file=envs/staging.tfvars
 bash ../../scripts/apply-k8s.sh staging
 ```
 
-### Paso 4: desplegar la API
+### Paso 4: guardar el token de GitHub
+
+El stack `persistent` crea el secreto `nelua-api/github-token` vacío. El token no
+pasa por Terraform, el repositorio ni el pipeline: lo guardo yo directo en Secrets
+Manager.
+
+1. En GitHub: *Settings → Developer settings → Fine-grained tokens → Generate new
+   token*. Repository access: solo los repos monitoreados. Para repos públicos no
+   hace falta ningún permiso extra; para privados, *Deployments: Read-only*.
+2. Guardarlo sin que quede en el historial de la terminal:
+
+```bash
+read -rs GH_TOKEN   # pegar el token y Enter; no se muestra
+aws secretsmanager put-secret-value --secret-id nelua-api/github-token \
+  --secret-string "$GH_TOKEN"
+unset GH_TOKEN
+```
+
+Si el recolector ya estaba corriendo, lee el token solo al arrancar:
+`kubectl rollout restart deployment/nelua-api-collector -n nelua-api`.
+
+Sin token también funciona con repos públicos, con el límite de 60 peticiones por
+hora para todo el clúster. Si se agota, la alarma `nelua-api-<ambiente>-sync-github`
+lo avisa y `meta.sync.error` muestra el HTTP 403 de GitHub.
+
+### Paso 5: desplegar la API
 
 1. `gh variable set DEPLOY_ENABLED --body "true"`.
 2. Correr el pipeline **app**, con un push a `api/**` o con *Run workflow*.
@@ -136,7 +192,7 @@ Para probarla ya desplegada:
 # La llave está en Secrets Manager y se lee solo cuando hace falta.
 KEY=$(aws secretsmanager get-secret-value --secret-id nelua-api/staging/api-keys \
   --query SecretString --output text | jq -r '.[0]')
-curl -s -H "X-API-Key: $KEY" https://api-staging.<dominio>/v1/summary
+curl -s -H "X-API-Key: $KEY" https://api-staging.<dominio>/v1/repos/londono652/nelua-api/deploys/stats
 ```
 
 ### Operación
@@ -144,6 +200,10 @@ curl -s -H "X-API-Key: $KEY" https://api-staging.<dominio>/v1/summary
 | Tarea | Cómo |
 |---|---|
 | Revertir un despliegue | Workflow **rollback**, eligiendo el ambiente |
+| Ver por qué los datos están viejos | `meta.sync.error` en cualquier respuesta, o `kubectl logs deployment/nelua-api-collector -n nelua-api` |
+| Monitorear otro repo | Agregarlo a `githubRepos` en `api/chart/values-<ambiente>.yaml` y desplegar |
+| Monitorear otro namespace | Agregarlo a `watchNamespaces` en el chart y su RoleBinding en `iac/k8s/rbac.yaml` |
+| Rotar el token de GitHub | `put-secret-value` con el nuevo y reiniciar el recolector |
 | Rotar la API key | Subir `api_key_version` en `iac/stacks/persistent` y aplicar. La API la recarga en 5 minutos sin redesplegar |
 | Ver métricas | `kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80` |
 | Prueba de carga | `bash cicd/load-tests/run-in-cluster.sh staging`, con `load_test_mode = true` en `envs/staging.tfvars` |

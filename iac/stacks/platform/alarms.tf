@@ -1,4 +1,5 @@
-# Monitoreo básico fuera del clúster: alarmas de CloudWatch sobre el ALB.
+# Monitoreo básico fuera del clúster: alarmas de CloudWatch sobre el ALB y sobre
+# la frescura de los datos que sirve la API.
 # Si el clúster entero falla, Prometheus cae con él; estas alarmas no.
 resource "aws_sns_topic" "alerts" {
   #checkov:skip=CKV_AWS_26:CloudWatch no puede publicar en un topic cifrado con la llave administrada por AWS (alias/aws/sns); exigiria una llave KMS propia. Los mensajes solo llevan el nombre y el estado de la alarma.
@@ -89,6 +90,49 @@ resource "aws_cloudwatch_metric_alarm" "unhealthy" {
   threshold           = 0
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+# ---------- Frescura de los datos ----------
+#
+# La API responde desde una foto que mantiene el recolector. Si el recolector
+# deja de sincronizar, la API sigue respondiendo 200 pero con datos viejos, y
+# ninguna de las alarmas del ALB lo nota. El recolector publica 1 por cada
+# sincronización buena y 0 por cada mala (métrica SyncSuccess); estas alarmas
+# saltan si en la ventana no hubo ninguna buena.
+#
+# La falta de datos cuenta como falla (breaching): así también avisan si el
+# recolector se muere, se queda sin permisos o no está desplegado.
+locals {
+  sync_alarms = {
+    github = {
+      description = "No se sincronizan los despliegues de GitHub hace 5 minutos (token vencido, límite agotado, repo inaccesible o recolector caído)"
+      period      = 300
+      evaluations = 1
+    }
+    cluster = {
+      description = "No se sincroniza el estado del clúster hace 2 minutos (recolector caído o sin permisos de RBAC)"
+      period      = 60
+      evaluations = 2
+    }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "sync" {
+  for_each = local.sync_alarms
+
+  alarm_name          = "${local.name}-sync-${each.key}"
+  alarm_description   = each.value.description
+  namespace           = var.project
+  metric_name         = "SyncSuccess"
+  dimensions          = { Environment = var.environment, Source = each.key }
+  statistic           = "Maximum"
+  period              = each.value.period
+  evaluation_periods  = each.value.evaluations
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
 }

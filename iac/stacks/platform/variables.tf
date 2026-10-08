@@ -91,3 +91,9 @@ variable "alb_deletion_protection" {
   type        = bool
   default     = true
 }
+
+variable "dynamodb_deletion_protection" {
+  description = "Protección contra borrado de la tabla de DynamoDB. Activa en producción; apagada en staging"
+  type        = bool
+  default     = true
+}

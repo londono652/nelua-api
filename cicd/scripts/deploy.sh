@@ -13,6 +13,8 @@ IMAGE_TAG="$2"
 connect_cluster "$ENVIRONMENT"
 REPOSITORY=$(param ecr/repository-url)
 SECRET_ID=$(param "secrets/api-keys-$ENVIRONMENT")
+TABLE_NAME=$(param "$ENVIRONMENT/dynamodb/table-name")
+GITHUB_TOKEN_SECRET=$(param secrets/github-token)
 
 # Se anota la revisión que está sirviendo ANTES de tocar nada: es el punto al
 # que vuelve el paso de rollback si la verificación posterior falla.
@@ -27,6 +29,8 @@ helm upgrade --install "$RELEASE" "$CHART" \
   --set image.repository="$REPOSITORY" \
   --set image.tag="$IMAGE_TAG" \
   --set apiKeys.secretId="$SECRET_ID" \
+  --set store.tableName="$TABLE_NAME" \
+  --set collector.githubTokenSecretId="$GITHUB_TOKEN_SECRET" \
   --set awsRegion="${AWS_REGION:-us-east-2}" \
   --wait --rollback-on-failure --timeout 5m
 
