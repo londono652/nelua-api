@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from app.auth import parse_keys
+from app.sources.aws_budgets import AwsBudgetSource, budget_status, parse_budget
 from app.sources.kubernetes import (
     KubernetesSource,
     deployment_status,
@@ -230,3 +231,56 @@ def test_split_image(image, version):
 )
 def test_parse_keys(raw, expected):
     assert parse_keys(raw) == expected
+
+
+# ---------- AWS Budgets ----------
+
+AWS_BUDGET = {
+    "BudgetName": "mensual",
+    "TimeUnit": "MONTHLY",
+    "BudgetLimit": {"Amount": "300.0", "Unit": "USD"},
+    "CalculatedSpend": {
+        "ActualSpend": {"Amount": "150.0", "Unit": "USD"},
+        "ForecastedSpend": {"Amount": "290.0", "Unit": "USD"},
+    },
+}
+
+
+def test_parse_budget():
+    budget = parse_budget(AWS_BUDGET)
+    assert (budget.name, budget.period) == ("mensual", "monthly")
+    assert (budget.actual_spend.amount, budget.percent_used, budget.status) == (150.0, 50.0, "ok")
+    assert budget.forecasted_spend.amount == 290.0
+
+
+@pytest.mark.parametrize(
+    ("percent", "forecast", "expected"),
+    [(50, 200, "ok"), (85, 250, "warning"), (50, 350, "warning"), (100, None, "exceeded")],
+)
+def test_budget_status(percent, forecast, expected):
+    assert budget_status(percent, forecast, 300) == expected
+
+
+def test_aws_budget_source_reads_the_account_budgets(monkeypatch):
+    import asyncio
+
+    import boto3
+    from moto import mock_aws
+
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    with mock_aws():
+        session = boto3.session.Session(region_name="us-east-2")
+        account = session.client("sts").get_caller_identity()["Account"]
+        session.client("budgets", region_name="us-east-1").create_budget(
+            AccountId=account,
+            Budget={
+                "BudgetName": "nelua-api-mensual",
+                "BudgetLimit": {"Amount": "300", "Unit": "USD"},
+                "TimeUnit": "MONTHLY",
+                "BudgetType": "COST",
+            },
+        )
+        budgets = asyncio.run(AwsBudgetSource(session).collect())
+    assert [b.name for b in budgets] == ["nelua-api-mensual"]
+    assert budgets[0].limit.amount == 300.0

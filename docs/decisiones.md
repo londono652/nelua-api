@@ -10,17 +10,21 @@ cosas que vigilar.
 ### Qué expone
 
 El dominio era libre. Elegí lo que le pregunta un equipo de plataforma a su
-tablero: cómo vienen saliendo los despliegues y en qué estado están los servicios.
+tablero: cómo vienen saliendo los despliegues, en qué estado están los servicios
+y cuánto se lleva gastado.
 
 | Pregunta | Endpoint | De dónde sale el dato |
 |---|---|---|
 | ¿Qué repos se siguen? | `/v1/repos` | Configuración (`githubRepos`) |
 | ¿Qué se desplegó hace poco? | `/v1/repos/{owner}/{repo}/deploys` | GitHub Deployments API. Cada job del pipeline con `environment: staging` o `prod` deja un registro con su estado |
 | ¿Qué tan bien salen los despliegues? | `/v1/repos/{owner}/{repo}/deploys/stats` | Calculado sobre el historial guardado en DynamoDB: tasa de éxito, tasa de fallos, despliegues por día y duración, en 7 y 30 días |
+| ¿Cuánto llevamos gastado? | `/v1/budget` | AWS Budgets: el presupuesto mensual de la cuenta (lo crea Terraform en la base compartida), con gasto real y pronóstico al cierre |
 | ¿Cómo están los servicios? | `/v1/deployments` | API de Kubernetes: deployments, pods, autoescaladores y ReplicaSets (de ahí sale el historial de revisiones y los rollbacks) |
 
-Con esto quedan cubiertos dos de los ejemplos del enunciado: estado de servicios y
-eventos de deploy. La tasa de fallos de despliegue es una de las cuatro métricas
+Con esto quedan cubiertos dos de los ejemplos del enunciado, estado de servicios y
+eventos de deploy, y uno de los temas deseables: el costo. El presupuesto es de
+toda la cuenta, así que staging y producción ven el mismo número. AWS actualiza
+el gasto pocas veces al día, por eso el recolector lo consulta cada 15 minutos. La tasa de fallos de despliegue es una de las cuatro métricas
 DORA, así que también son métricas de entrega y no solo de infraestructura.
 
 Si un job se cancela, GitHub puede dejar el despliegue "en curso" para siempre.
@@ -71,7 +75,8 @@ K8s   ──┘   (1 réplica)           └─ pod API ─┘
 ```
 
 - **El recolector** es un Deployment aparte, con una sola réplica, que usa la
-  misma imagen. Consulta Kubernetes cada 15 segundos y GitHub cada 60. Guarda en
+  misma imagen. Consulta Kubernetes cada 15 segundos, GitHub cada 60 y AWS
+  Budgets cada 15 minutos. Guarda en
   DynamoDB el historial de despliegues y una foto ya calculada de cada vista
   (los últimos 100 despliegues y las métricas de cada ambiente y ventana).
 - **DynamoDB** es la memoria compartida. El historial se guarda porque GitHub solo
@@ -144,7 +149,8 @@ proteger algo que ya está protegido por la foto. Se despliega con estrategia
 **Seguridad.** La API y el recolector tienen identidades separadas. La API solo
 puede leer DynamoDB y su secreto de API keys; no tiene ningún permiso sobre
 Kubernetes. El recolector puede escribir en DynamoDB, leer el token de GitHub y
-listar deployments, pods, autoescaladores y ReplicaSets en su namespace. Un pod de
+los presupuestos de la cuenta, y listar deployments, pods, autoescaladores y
+ReplicaSets en su namespace. Un pod de
 la API comprometido no puede escribir datos ni ver el token.
 
 ### REST y no GraphQL
@@ -439,6 +445,10 @@ También puse topes. El pool de nodos no pasa de 200 vCPU y el HPA tiene un máx
 de réplicas, para que un error o un ataque no escalen sin límite. Y todo lo que
 cuesta por hora se puede apagar por ambiente (`STAGING_ENABLED`, `PROD_ENABLED` y
 el workflow `ops-down`) y volver a crear desde cero con el pipeline.
+
+El gasto también se consulta en la misma API, en `/v1/budget`. Terraform crea un
+presupuesto mensual (`monthly_budget_usd`) y, si se configura un correo, AWS avisa
+al 80 % del gasto y cuando el pronóstico del mes supera el límite.
 
 Estos son órdenes de magnitud mensuales de un ambiente en reposo, en us-east-2 y
 con precios de lista. Habría que confirmarlos con la calculadora de AWS.

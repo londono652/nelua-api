@@ -21,3 +21,15 @@ variable "api_key_version" {
   type        = number
   default     = 1
 }
+
+variable "monthly_budget_usd" {
+  description = "Presupuesto mensual de la cuenta en USD. La API lo expone en GET /v1/budget"
+  type        = number
+  default     = 300
+}
+
+variable "budget_alert_email" {
+  description = "Correo que recibe los avisos del presupuesto (80 % gastado o pronóstico por encima del límite). Vacío: sin avisos"
+  type        = string
+  default     = ""
+}

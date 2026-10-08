@@ -56,7 +56,7 @@
         </mxCell>
 
         <mxCell id="persistBox" value="Base compartida" style="rounded=1;arcSize=4;fillColor=#F2F8EC;strokeColor=#3F8624;strokeWidth=2;dashed=1;verticalAlign=top;align=center;fontSize=11;fontColor=#3F8624;fontStyle=1;html=1;whiteSpace=wrap;" vertex="1" parent="1">
-          <mxGeometry x="1140" y="240" width="185" height="665" as="geometry" />
+          <mxGeometry x="1140" y="240" width="185" height="705" as="geometry" />
         </mxCell>
 
         <mxCell id="github" value="GitHub" style="rounded=1;arcSize=3;fillColor=#F5F5F5;strokeColor=#24292F;strokeWidth=2;verticalAlign=top;align=center;fontSize=13;fontColor=#24292F;fontStyle=1;html=1;whiteSpace=wrap;" vertex="1" parent="1">
@@ -115,7 +115,7 @@
         <mxCell id="addProm" value="&lt;b&gt;Prometheus + Grafana&lt;/b&gt;&lt;br&gt;métricas y dashboards" style="rounded=1;fillColor=#FFFFFF;strokeColor=#879196;fontSize=10;fontColor=#232F3E;html=1;whiteSpace=wrap;" vertex="1" parent="1">
           <mxGeometry x="831" y="572" width="240" height="44" as="geometry" />
         </mxCell>
-        <mxCell id="podNote" value="Namespace &lt;b&gt;nelua-api&lt;/b&gt; · &lt;b&gt;pods de la API&lt;/b&gt; sin estado: leen las fotos de DynamoDB cada 5 s y responden desde memoria · repartidos entre zonas&lt;br&gt;&lt;b&gt;Recolector&lt;/b&gt; (1 réplica): lee la API de Kubernetes cada 15 s (RBAC de solo lectura) y GitHub cada 60 s · un rol de IAM por componente (Pod Identity)" style="rounded=1;fillColor=#FFF8F0;strokeColor=#ED7100;dashed=1;fontSize=10;fontColor=#232F3E;html=1;whiteSpace=wrap;" vertex="1" parent="1">
+        <mxCell id="podNote" value="Namespace &lt;b&gt;nelua-api&lt;/b&gt; · &lt;b&gt;pods de la API&lt;/b&gt; sin estado: leen las fotos de DynamoDB cada 5 s y responden desde memoria · repartidos entre zonas&lt;br&gt;&lt;b&gt;Recolector&lt;/b&gt; (1 réplica): lee Kubernetes cada 15 s (RBAC de solo lectura), GitHub cada 60 s y AWS Budgets cada 15 min · un rol de IAM por componente (Pod Identity)" style="rounded=1;fillColor=#FFF8F0;strokeColor=#ED7100;dashed=1;fontSize=10;fontColor=#232F3E;html=1;whiteSpace=wrap;" vertex="1" parent="1">
           <mxGeometry x="333" y="630" width="738" height="56" as="geometry" />
         </mxCell>
 
@@ -136,11 +136,11 @@
         <mxCell id="ssm" value="SSM Parameter Store&lt;br&gt;(contrato IaC → app)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.systems_manager;" vertex="1" parent="1">
           <mxGeometry x="1207" y="430" width="50" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="cw" value="CloudWatch + SNS&lt;br&gt;(alarmas del ALB y de frescura,&lt;br&gt;sin destinatario)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;" vertex="1" parent="1">
-          <mxGeometry x="1207" y="712" width="50" height="50" as="geometry" />
+        <mxCell id="cw" value="CloudWatch + SNS&lt;br&gt;(alarmas del ALB y de frescura)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch_2;" vertex="1" parent="1">
+          <mxGeometry x="1207" y="680" width="50" height="50" as="geometry" />
         </mxCell>
         <mxCell id="iam" value="IAM&lt;br&gt;(OIDC de GitHub · Pod Identity)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;" vertex="1" parent="1">
-          <mxGeometry x="1207" y="820" width="50" height="50" as="geometry" />
+          <mxGeometry x="1207" y="858" width="50" height="50" as="geometry" />
         </mxCell>
         <!-- GITHUB -->
         <mxCell id="repoApp" value="&lt;b&gt;nelua-api&lt;/b&gt; (un repositorio)&lt;br&gt;/api · /iac · /cicd" style="rounded=1;fillColor=#FFFFFF;strokeColor=#24292F;fontSize=10;fontColor=#24292F;html=1;whiteSpace=wrap;" vertex="1" parent="1">
@@ -295,6 +295,12 @@
         </mxCell>
         <mxCell id="d2" value="recolector: deployments cada 60 s&lt;br&gt;(HTTPS, sale por el NAT)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#24292F;strokeWidth=2;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.95;exitDx=0;exitDy=0;" edge="1" parent="1" source="eks" target="ghApi">
           <mxGeometry relative="1" as="geometry"><mxPoint x="0" y="-18" as="offset" /></mxGeometry>
+        </mxCell>
+              <mxCell id="budgets" value="AWS Budgets&lt;br&gt;(presupuesto mensual de la cuenta)" style="sketch=0;points=[];outlineConnect=0;fontColor=#232F3E;fillColor=#7AA116;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=10;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.budgets_2;" vertex="1" parent="1">
+          <mxGeometry x="1207" y="772" width="50" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="lee presupuesto (c/15 min)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#3F8624;strokeWidth=2;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.9;" edge="1" parent="1" source="eks" target="budgets">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1112" y="672" /><mxPoint x="1112" y="797" /></Array></mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>

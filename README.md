@@ -1,8 +1,9 @@
 # nelua-api
 
-API REST para un equipo de plataforma. Responde dos preguntas: cómo vienen saliendo
-los despliegues de un repositorio (los últimos y su tasa de éxito, sacados de
-GitHub) y en qué estado están los servicios en Kubernetes, por namespace.
+API REST para un equipo de plataforma. Responde tres preguntas: cómo vienen
+saliendo los despliegues de un repositorio (los últimos y su tasa de éxito,
+sacados de GitHub), en qué estado están los servicios en Kubernetes, por
+namespace, y cuánto se lleva gastado frente al presupuesto de AWS.
 
 Las fuentes son externas y lentas comparadas con 10.000 RPS, así que la API no las
 consulta en cada petición. Un recolector las lee cada pocos segundos, guarda el
@@ -35,7 +36,8 @@ curl -s -H "X-API-Key: cambia-esta-llave-local" localhost:8000/v1/repos/londono6
 ```
 
 Levanta tres contenedores: DynamoDB Local, el recolector y la API. En local no hay
-clúster, así que el estado de Kubernetes y los despliegues son datos de ejemplo.
+clúster ni cuenta de AWS, así que el estado de Kubernetes, los despliegues y el
+presupuesto son datos de ejemplo.
 Los despliegues pueden ser los reales de GitHub cambiando una variable en `.env`.
 El detalle está en [`run.md`](run.md).
 
@@ -46,6 +48,7 @@ El detalle está en [`run.md`](run.md).
 | `GET /v1/repos` | Repositorios monitoreados y qué tan recientes son sus datos |
 | `GET /v1/repos/{owner}/{repo}/deploys` | Últimos despliegues: ambiente, estado, commit, autor, duración y enlace a la ejecución. Filtros `environment` y `limit` |
 | `GET /v1/repos/{owner}/{repo}/deploys/stats` | Tasa de éxito, tasa de fallos (la de DORA), despliegues por día y duración promedio, en 7 o 30 días (`days`), por ambiente |
+| `GET /v1/budget` | Presupuesto de la cuenta de AWS: límite, gasto del mes, pronóstico al cierre y estado (`ok`, `warning`, `exceeded`) |
 | `GET /v1/deployments` | Estado de los deployments por namespace: réplicas, versión, pods, autoescalado e historial de revisiones (ahí se ven los rollbacks). Filtros `namespace`, `name` y `status` |
 | `GET /healthz`, `/readyz`, `/metrics` | Operación: liveness, readiness y métricas para Prometheus |
 
@@ -89,9 +92,9 @@ En resumen:
 - Hay tres zonas y, en producción, mínimo tres réplicas repartidas entre ellas.
   Los despliegues no tumban el servicio.
 - La API no tiene estado y responde desde memoria. Para llegar a 10.000 RPS
-  escalan los pods (HPA) y los nodos (EKS Auto Mode). La carga sobre GitHub,
-  Kubernetes y DynamoDB no crece con el tráfico: GitHub y Kubernetes los consulta
-  solo el recolector, y cada pod lee DynamoDB una vez cada 5 segundos.
+  escalan los pods (HPA) y los nodos (EKS Auto Mode). La carga sobre las fuentes
+  y DynamoDB no crece con el tráfico: GitHub, Kubernetes y AWS Budgets los
+  consulta solo el recolector, y cada pod lee DynamoDB una vez cada 5 segundos.
 - En producción cada consumidor tiene su cliente de Cognito y pide tokens de una
   hora; el ALB los valida y rechaza el tráfico sin token antes de llegar a los pods.
 - No hay secretos en el código ni en GitHub. Los pipelines entran a AWS por OIDC,

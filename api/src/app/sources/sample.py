@@ -9,7 +9,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from app.models import ClusterState, Deploy
+from app.models import Budget, ClusterState, Deploy
 from app.sources.github import STATE_MAP
 
 SAMPLE_FILE = Path(__file__).parent.parent / "data" / "sample.json"
@@ -60,3 +60,10 @@ class SampleDeploySource:
             known.get(item["id"]) or sample_deploy(item, repo, now)
             for item in _load()["deploys"].get(repo, [])
         ]
+
+
+class SampleBudgetSource:
+    name = "sample"
+
+    async def collect(self) -> list[Budget]:
+        return [Budget(**item) for item in _load()["budgets"]]

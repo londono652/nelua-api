@@ -317,5 +317,25 @@
         "creator": "londono652"
       }
     ]
-  }
+  },
+  "budgets": [
+    {
+      "name": "nelua-api-mensual",
+      "period": "monthly",
+      "limit": {
+        "amount": 300.0,
+        "unit": "USD"
+      },
+      "actual_spend": {
+        "amount": 187.42,
+        "unit": "USD"
+      },
+      "forecasted_spend": {
+        "amount": 312.9,
+        "unit": "USD"
+      },
+      "percent_used": 62.47,
+      "status": "warning"
+    }
+  ]
 }

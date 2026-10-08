@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.collector import Collector
 from app.config import Settings, load_settings
 from app.main import create_app
-from app.sources.sample import SampleClusterSource, SampleDeploySource
+from app.sources.sample import SampleBudgetSource, SampleClusterSource, SampleDeploySource
 from app.store import MemoryStore
 
 API_KEY = "test-key"
@@ -44,9 +44,16 @@ def wait_ready():
 async def store(settings) -> MemoryStore:
     """Un almacén con lo que dejaría el recolector después de una vuelta."""
     memory = MemoryStore()
-    collector = Collector(settings, memory, SampleClusterSource(), SampleDeploySource())
+    collector = Collector(
+        settings,
+        memory,
+        SampleClusterSource(),
+        SampleDeploySource(),
+        budget_source=SampleBudgetSource(),
+    )
     await collector.sync_cluster()
     await collector.sync_deploys()
+    await collector.sync_budget()
     return memory
 
 

@@ -8,7 +8,8 @@
 #   collector  El recolector: consulta las fuentes y escribe las fotos.
 #   api        La API: lee las fotos y responde en http://localhost:8000.
 #
-# Por defecto las fuentes son de ejemplo (datos fijos, no reales). Para leer
+# Por defecto las fuentes son de ejemplo (datos fijos, no reales): clúster,
+# despliegues y presupuesto. Para leer
 # despliegues reales de GitHub, define GITHUB_SOURCE=github y GITHUB_TOKEN en .env.
 
 x-aws-local: &aws-local
@@ -47,6 +48,7 @@ services:
       <<: *aws-local
       CREATE_TABLE: "true"
       CLUSTER_SOURCE: sample
+      BUDGET_SOURCE: sample
       GITHUB_SOURCE: ${GITHUB_SOURCE:-sample}
       # Solo si GITHUB_SOURCE=github. Sale de .env, que no se versiona.
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}

@@ -40,6 +40,9 @@ class Settings:
     # De dónde salen los datos: "kubernetes"/"github" (reales) o "sample" (ejemplo).
     cluster_source: str
     github_source: str
+    # "aws" (AWS Budgets), "sample" o "none" (no se consulta).
+    budget_source: str
+    budget_refresh_seconds: int
     watch_namespaces: tuple[str, ...]
     cluster_refresh_seconds: int
     github_refresh_seconds: int
@@ -75,6 +78,8 @@ def load_settings() -> Settings:
         api_keys_refresh_seconds=int(env("API_KEYS_REFRESH_SECONDS", "300")),
         cluster_source=env("CLUSTER_SOURCE", "sample"),
         github_source=env("GITHUB_SOURCE", "sample"),
+        budget_source=env("BUDGET_SOURCE", "sample"),
+        budget_refresh_seconds=int(env("BUDGET_REFRESH_SECONDS", "900")),
         watch_namespaces=_csv(env("WATCH_NAMESPACES", "nelua-api")),
         cluster_refresh_seconds=int(env("CLUSTER_REFRESH_SECONDS", "15")),
         github_refresh_seconds=int(env("GITHUB_REFRESH_SECONDS", "60")),

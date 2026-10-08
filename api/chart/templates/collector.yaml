@@ -51,6 +51,10 @@ spec:
               value: {{ .Values.collector.sources.cluster | quote }}
             - name: GITHUB_SOURCE
               value: {{ .Values.collector.sources.github | quote }}
+            - name: BUDGET_SOURCE
+              value: {{ .Values.collector.sources.budget | quote }}
+            - name: BUDGET_REFRESH_SECONDS
+              value: {{ .Values.collector.budgetRefreshSeconds | quote }}
             - name: WATCH_NAMESPACES
               value: {{ join "," (default (list .Release.Namespace) .Values.watchNamespaces) | quote }}
             - name: DEPLOY_ENVIRONMENTS

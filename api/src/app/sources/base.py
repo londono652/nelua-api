@@ -1,13 +1,13 @@
 """Contratos de las fuentes de datos.
 
 El recolector no sabe de dónde vienen los datos: solo conoce estas interfaces.
-En el clúster se usan las implementaciones reales (Kubernetes y GitHub); en
+En el clúster se usan las implementaciones reales (Kubernetes, GitHub y AWS Budgets); en
 desarrollo local y en las pruebas, las de ejemplo.
 """
 
 from typing import Protocol
 
-from app.models import ClusterState, Deploy
+from app.models import Budget, ClusterState, Deploy
 
 
 class ClusterSource(Protocol):
@@ -23,3 +23,9 @@ class DeploySource(Protocol):
         """Devuelve los despliegues recientes de un repositorio ("owner/repo").
         Los que ya están en "known" y terminaron no se vuelven a consultar."""
         ...
+
+
+class BudgetSource(Protocol):
+    name: str
+
+    async def collect(self) -> list[Budget]: ...

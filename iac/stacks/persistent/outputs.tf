@@ -25,3 +25,8 @@ output "github_token_secret" {
   description = "Secreto donde se guarda a mano el token de GitHub del recolector"
   value       = aws_secretsmanager_secret.github_token.name
 }
+
+output "budget_name" {
+  description = "Presupuesto mensual de la cuenta (lo expone la API en /v1/budget)"
+  value       = aws_budgets_budget.monthly.name
+}

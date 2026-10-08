@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 DeploymentStatus = Literal["healthy", "progressing", "degraded", "unavailable", "scaled_down"]
 DeployStatus = Literal["success", "failure", "in_progress"]
+BudgetStatus = Literal["ok", "warning", "exceeded"]
 
 
 # ---------- Despliegues (GitHub) ----------
@@ -122,6 +123,28 @@ class ClusterState(BaseModel):
     revisions: list[Revision] = []
 
 
+# ---------- Costos (AWS Budgets) ----------
+
+
+class Money(BaseModel):
+    amount: float
+    unit: str
+
+
+class Budget(BaseModel):
+    """Un presupuesto de la cuenta de AWS: cuánto se ha gastado frente al límite."""
+
+    name: str
+    period: str
+    limit: Money
+    actual_spend: Money
+    # Lo que AWS estima que se gastará al cierre del periodo.
+    forecasted_spend: Money | None = None
+    percent_used: float
+    # ok · warning (80 % o más, o el pronóstico supera el límite) · exceeded
+    status: BudgetStatus
+
+
 # ---------- Respuestas ----------
 
 
@@ -161,6 +184,11 @@ class DeployList(BaseModel):
 
 class DeployStatsList(BaseModel):
     data: list[DeployStats]
+    meta: Meta
+
+
+class BudgetList(BaseModel):
+    data: list[Budget]
     meta: Meta
 
 

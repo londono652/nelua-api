@@ -1,4 +1,4 @@
-"""nelua-api: despliegues (GitHub) y estado de los servicios (Kubernetes).
+"""nelua-api: despliegues (GitHub), estado de los servicios (Kubernetes) y presupuesto (AWS).
 
 La API no consulta fuentes externas. Lee las fotos que deja el recolector en
 DynamoDB y responde desde memoria; por eso escala a 10.000 RPS sin trasladarle
@@ -17,11 +17,11 @@ from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 
 from app.auth import ApiKeyStore, require_api_key
-from app.collector import deploys_snapshot_name
+from app.collector import BUDGET_SNAPSHOT, deploys_snapshot_name
 from app.config import Settings, load_settings
 from app.deploys import WINDOWS
 from app.errors import ApiError, register_error_handlers
-from app.models import DeployList, DeploymentList, DeployStatsList, Problem
+from app.models import BudgetList, DeployList, DeploymentList, DeployStatsList, Problem
 from app.reader import SnapshotReader
 from app.store import DynamoStore, Store
 
@@ -75,7 +75,7 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
 
     app = FastAPI(
         title="nelua-api",
-        summary="Despliegues de GitHub y estado de los servicios en Kubernetes",
+        summary="Despliegues de GitHub, estado de los servicios en Kubernetes y presupuesto de AWS",
         version=settings.app_version,
         lifespan=lifespan,
     )
@@ -189,6 +189,18 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
             and (status is None or d["status"] == status)
         ]
         return JSONResponse({"data": items, "meta": reader.meta("cluster")})
+
+    @v1.get("/budget", response_model=BudgetList, tags=["costos"])
+    def get_budget():
+        """Presupuestos de la cuenta de AWS: límite, gasto, pronóstico y estado.
+
+        AWS actualiza el gasto unas pocas veces al día; el recolector lo consulta
+        cada 15 minutos.
+        """
+        snapshot = reader.get(BUDGET_SNAPSHOT)
+        if snapshot is None:
+            raise ApiError(503, "Aún no se ha recolectado el presupuesto")
+        return JSONResponse({"data": snapshot.payload, "meta": reader.meta(BUDGET_SNAPSHOT)})
 
     app.include_router(v1)
 

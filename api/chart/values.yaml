@@ -53,9 +53,13 @@ collector:
   sources:
     cluster: kubernetes
     github: github
+    # "aws" (AWS Budgets), "sample" o "none".
+    budget: aws
   clusterRefreshSeconds: 15
   # 60 s con un repo son ~60-120 peticiones por hora a GitHub (el límite es 5.000).
   githubRefreshSeconds: 60
+  # AWS actualiza el gasto pocas veces al día: no tiene sentido consultarlo más seguido.
+  budgetRefreshSeconds: 900
   # Nombre del secreto con el token de GitHub (vacío: sin token, solo pruebas).
   githubTokenSecretId: nelua-api/github-token
   # Namespace de CloudWatch donde publica si cada sincronización salió bien. De

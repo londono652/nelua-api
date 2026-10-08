@@ -30,6 +30,7 @@ curl -s -H "X-API-Key: $KEY" localhost:8000/v1/repos
 curl -s -H "X-API-Key: $KEY" "localhost:8000/v1/repos/$R/deploys?environment=prod&limit=5"
 curl -s -H "X-API-Key: $KEY" "localhost:8000/v1/repos/$R/deploys/stats?days=7"
 curl -s -H "X-API-Key: $KEY" "localhost:8000/v1/deployments?namespace=nelua-api"
+curl -s -H "X-API-Key: $KEY" localhost:8000/v1/budget
 curl -s -H "X-API-Key: $KEY" localhost:8000/v1/repos/otro/repo/deploys          # 404: no monitoreado
 ```
 
@@ -74,6 +75,8 @@ sensibles en el código.
 | `SNAPSHOT_REFRESH_SECONDS` | API | Cada cuánto relee las fotos de DynamoDB | `5` |
 | `CLUSTER_SOURCE` | recolector | `kubernetes` (real) o `sample` | `sample` |
 | `GITHUB_SOURCE` | recolector | `github` (real) o `sample` | `sample` |
+| `BUDGET_SOURCE` | recolector | `aws` (AWS Budgets), `sample` o `none` | `sample` |
+| `BUDGET_REFRESH_SECONDS` | recolector | Cada cuánto consulta AWS Budgets | `900` |
 | `GITHUB_TOKEN` | recolector | Token de GitHub (uso local) | (ninguno) |
 | `GITHUB_TOKEN_SECRET_ID` | recolector | Secreto con el token de GitHub (en AWS) | (ninguno) |
 | `WATCH_NAMESPACES` | recolector | Namespaces que se exponen | `nelua-api` |
@@ -94,7 +97,7 @@ cambian y por lo que cuestan.
 | Stack | Qué crea | Cómo se aplica | Costo |
 |---|---|---|---|
 | `bootstrap` | Bucket del estado, confianza OIDC con GitHub y zona DNS | A mano, una vez | Centavos |
-| `persistent` | Lo que comparten los ambientes: ECR, certificado, secretos de las API keys y el del token de GitHub | Pipeline | Centavos |
+| `persistent` | Lo que comparten los ambientes: ECR, certificado, secretos de las API keys y el del token de GitHub, y el presupuesto mensual de la cuenta | Pipeline | Centavos |
 | `platform` | Un ambiente completo: VPC, EKS, ALB, WAF, DynamoDB, IAM de la API y del recolector, y alarmas | Pipeline, una vez por ambiente y con interruptor | Por hora |
 
 El stack `platform` se aplica una vez por ambiente. El código es el mismo y cada

@@ -5,7 +5,7 @@ import pytest
 PROBLEM = "application/problem+json"
 DEPLOYS = "/v1/repos/londono652/nelua-api/deploys"
 STATS = f"{DEPLOYS}/stats"
-V1_PATHS = ["/v1/repos", DEPLOYS, STATS, "/v1/deployments"]
+V1_PATHS = ["/v1/repos", DEPLOYS, STATS, "/v1/deployments", "/v1/budget"]
 
 
 def assert_problem(response, status: int) -> dict:
@@ -169,6 +169,19 @@ def test_deployment_history_shows_the_rollback(client, auth):
     assert history[0]["version"] == "sample-1a2b3c4"
 
 
+# ---------- Presupuesto ----------
+
+
+def test_get_budget(client, auth):
+    body = client.get("/v1/budget", headers=auth).json()
+    budget = body["data"][0]
+    assert budget["name"] == "nelua-api-mensual"
+    assert budget["limit"] == {"amount": 300.0, "unit": "USD"}
+    assert (budget["percent_used"], budget["status"]) == (62.47, "warning")
+    assert body["meta"]["source"] == "sample"
+    assert body["meta"]["sync"]["error"] is None
+
+
 # ---------- Errores y operación ----------
 
 
@@ -197,4 +210,5 @@ def test_metrics_use_the_route_template_not_the_url(client, auth):
 def test_metrics_report_snapshot_age(client):
     metrics = client.get("/metrics").text
     assert 'snapshot_age_seconds{snapshot="cluster"}' in metrics
+    assert 'snapshot_age_seconds{snapshot="budget"}' in metrics
     assert 'snapshot_age_seconds{snapshot="deploys#londono652/nelua-api"}' in metrics

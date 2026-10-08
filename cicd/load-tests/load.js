@@ -27,7 +27,8 @@ const REPO = __ENV.REPO || 'londono652/nelua-api';
 const MIX = [
   { name: 'deployments', path: '/v1/deployments', weight: 0.4 },
   { name: 'deploys', path: `/v1/repos/${REPO}/deploys`, weight: 0.35 },
-  { name: 'stats', path: `/v1/repos/${REPO}/deploys/stats`, weight: 0.2 },
+  { name: 'stats', path: `/v1/repos/${REPO}/deploys/stats`, weight: 0.15 },
+  { name: 'budget', path: '/v1/budget', weight: 0.05 },
   { name: 'repos', path: '/v1/repos', weight: 0.05 },
 ];
 

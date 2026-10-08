@@ -47,7 +47,7 @@ fi
 
 # El repo que se verifica es el primero de la lista monitoreada en el chart.
 REPO=$(helm get values "$RELEASE" --namespace "$NAMESPACE" --all --output json | jq -r '.githubRepos[0]')
-for path in /v1/repos "/v1/repos/$REPO/deploys" "/v1/repos/$REPO/deploys/stats" /v1/deployments; do
+for path in /v1/repos "/v1/repos/$REPO/deploys" "/v1/repos/$REPO/deploys/stats" /v1/deployments /v1/budget; do
   status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "$AUTH_HEADER" "$URL$path")
   echo "  $path -> $status"
   if [ "$status" != "200" ]; then

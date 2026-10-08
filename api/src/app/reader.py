@@ -9,7 +9,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from app.collector import SYNC_SNAPSHOT, deploys_snapshot_name
+from app.collector import BUDGET_SNAPSHOT, SYNC_SNAPSHOT, deploys_snapshot_name
 from app.store import Snapshot, Store
 
 logger = logging.getLogger("nelua.reader")
@@ -52,7 +52,11 @@ class SnapshotReader:
         self._store = store
         self.repos = repos
         self._refresh_seconds = refresh_seconds
-        self.views = ["cluster", *(deploys_snapshot_name(repo) for repo in repos)]
+        self.views = [
+            "cluster",
+            BUDGET_SNAPSHOT,
+            *(deploys_snapshot_name(repo) for repo in repos),
+        ]
         self.names = [*self.views, SYNC_SNAPSHOT]
         self._snapshots: dict[str, Snapshot] = {}
         self.loaded = False

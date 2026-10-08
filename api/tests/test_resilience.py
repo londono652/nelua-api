@@ -39,7 +39,7 @@ def test_not_ready_until_the_store_can_be_read(settings, auth):
 def test_empty_store_answers_503_with_the_error_format(settings, auth, wait_ready):
     with TestClient(create_app(settings, MemoryStore())) as client:
         wait_ready(client)  # leyó el almacén, aunque todavía no haya fotos
-        for path in ("/v1/deployments", f"/v1/repos/{REPO}/deploys"):
+        for path in ("/v1/deployments", f"/v1/repos/{REPO}/deploys", "/v1/budget"):
             response = client.get(path, headers=auth)
             assert response.status_code == 503
             assert response.headers["content-type"] == "application/problem+json"

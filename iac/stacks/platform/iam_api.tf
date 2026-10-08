@@ -5,8 +5,9 @@
 # componente, cada uno con lo mínimo que necesita:
 #
 #   API         lee las fotos de DynamoDB y el secreto de SUS API keys.
-#   recolector  escribe en DynamoDB, lee el token de GitHub y publica en
-#               CloudWatch si cada sincronización salió bien.
+#   recolector  escribe en DynamoDB, lee el token de GitHub y los presupuestos
+#               de la cuenta, y publica en CloudWatch si cada sincronización
+#               salió bien.
 #
 # Así, un pod de la API comprometido no puede escribir datos ni leer el token
 # de GitHub, y el de staging no puede leer nada de producción.
@@ -75,6 +76,13 @@ data "aws_iam_policy_document" "collector_permissions" {
       "dynamodb:DescribeTable",
     ]
     resources = [aws_dynamodb_table.api.arn]
+  }
+
+  # Presupuestos de la cuenta, para GET /v1/budget. Solo lectura.
+  statement {
+    sid       = "ReadBudgets"
+    actions   = ["budgets:ViewBudget"]
+    resources = ["arn:aws:budgets::${local.account_id}:budget/*"]
   }
 
   # Solo puede publicar métricas en el namespace de la aplicación.

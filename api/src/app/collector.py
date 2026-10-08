@@ -24,7 +24,7 @@ import httpx
 from app.config import Settings, load_settings
 from app.deploys import WINDOWS, all_stats, latest
 from app.models import ClusterState, Deploy
-from app.sources.base import ClusterSource, DeploySource
+from app.sources.base import BudgetSource, ClusterSource, DeploySource
 from app.store import DynamoStore, Store
 
 logger = logging.getLogger("nelua.collector")
@@ -45,6 +45,7 @@ def cluster_views(state: ClusterState) -> list[dict]:
 
 # Foto con el estado de la última sincronización de cada vista.
 SYNC_SNAPSHOT = "sync"
+BUDGET_SNAPSHOT = "budget"
 
 
 def deploys_snapshot_name(repo: str) -> str:
@@ -63,12 +64,14 @@ class Collector:
         cluster_source: ClusterSource,
         deploy_source: DeploySource,
         metrics: SyncMetrics | None = None,
+        budget_source: BudgetSource | None = None,
     ) -> None:
         self._settings = settings
         self._store = store
         self._cluster = cluster_source
         self._deploys = deploy_source
         self._metrics = metrics
+        self._budgets = budget_source
         self.sync_status: dict[str, dict[str, Any]] = {}
 
     async def collect_cluster(self) -> None:
@@ -104,6 +107,17 @@ class Collector:
             self._settings.github_refresh_seconds,
         )
         logger.info("%s: %d despliegues, %d nuevos o actualizados", repo, len(merged), len(changed))
+
+    async def collect_budget(self) -> None:
+        if self._budgets is None:
+            return
+        budgets = await self._budgets.collect()
+        await self._store.put_snapshot(
+            BUDGET_SNAPSHOT,
+            [b.model_dump(mode="json") for b in budgets],
+            self._budgets.name,
+            self._settings.budget_refresh_seconds,
+        )
 
     async def collect_deploys(self) -> None:
         for repo in self._settings.github_repos:
@@ -162,6 +176,10 @@ class Collector:
         ]
         await self._report("github", all(results))
 
+    async def sync_budget(self) -> None:
+        ok = await self._attempt(BUDGET_SNAPSHOT, self.collect_budget)
+        await self._report("budget", ok)
+
     def _beat(self) -> None:
         # La liveness probe del recolector revisa que este archivo se actualice.
         Path(self._settings.heartbeat_file).write_text(str(time.time()))
@@ -177,7 +195,11 @@ class Collector:
 
     async def restore_sync_status(self) -> None:
         """Recupera el estado anterior al arrancar, para no perder el último éxito."""
-        views = {"cluster", *(deploys_snapshot_name(r) for r in self._settings.github_repos)}
+        views = {
+            "cluster",
+            BUDGET_SNAPSHOT,
+            *(deploys_snapshot_name(r) for r in self._settings.github_repos),
+        }
         try:
             previous = await self._store.get_snapshots([SYNC_SNAPSHOT])
         except Exception:
@@ -194,10 +216,13 @@ class Collector:
     async def run_forever(self) -> None:
         self._beat()
         await self.restore_sync_status()
-        await asyncio.gather(
+        loops = [
             self._run(self._settings.cluster_refresh_seconds, self.sync_cluster),
             self._run(self._settings.github_refresh_seconds, self.sync_deploys),
-        )
+        ]
+        if self._budgets is not None:
+            loops.append(self._run(self._settings.budget_refresh_seconds, self.sync_budget))
+        await asyncio.gather(*loops)
 
 
 def describe_error(exc: Exception) -> str:
@@ -300,7 +325,17 @@ def build(settings: Settings) -> Collector:
             settings.metrics_namespace, settings.environment, settings.aws_region
         )
 
-    return Collector(settings, store, cluster, deploys, metrics)
+    budgets: BudgetSource | None = None
+    if settings.budget_source == "aws":
+        from app.sources.aws_budgets import AwsBudgetSource
+
+        budgets = AwsBudgetSource()
+    elif settings.budget_source == "sample":
+        from app.sources.sample import SampleBudgetSource
+
+        budgets = SampleBudgetSource()
+
+    return Collector(settings, store, cluster, deploys, metrics, budgets)
 
 
 def main() -> None:
