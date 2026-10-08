@@ -1,10 +1,14 @@
 name: infra · Aplicación
 
-# Aplica el cambio ya revisado, tras aprobación manual, y deja el clúster
-# configurado. Lo llama infra.yml; no se ejecuta solo.
+# Aplica el cambio ya revisado. Lo llama infra.yml; no se ejecuta solo.
 #
-#   4 · Apply ──> 5 · Configuración del clúster
-#   (aprobación)
+#   4 · Base compartida ──> 5 · Staging ──> 6 · Producción
+#   (aprobación)            (interruptor)   (interruptor + aprobación)
+#
+# Cada ambiente es el mismo stack de Terraform con su propio archivo de valores
+# y su propio estado. Se enciende con una variable del repositorio:
+#   STAGING_ENABLED = true   crea o actualiza staging
+#   PROD_ENABLED    = true   crea o actualiza producción
 on:
   workflow_call:
 
@@ -19,8 +23,8 @@ env:
 
 jobs:
   # ───────────────────────── Etapa 4 ─────────────────────────
-  apply:
-    name: 4 · Apply
+  shared:
+    name: 4 · Base compartida
     runs-on: ubuntu-24.04
     # El environment "infra" exige aprobación manual antes de aplicar.
     environment: infra
@@ -40,27 +44,17 @@ jobs:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
 
+      # Lo que usan los dos ambientes: registro de imágenes, certificado y secretos.
       - name: Apply del stack persistent (ECR, certificado, secretos, contrato)
         run: |
           terraform -chdir=iac/stacks/persistent init -input=false
           terraform -chdir=iac/stacks/persistent apply -input=false -auto-approve
 
-      # Interruptor de costo: la plataforma solo se crea cuando PLATFORM_ENABLED es "true".
-      - name: Apply del stack platform (VPC, EKS, ALB, WAF, DNS, IAM, alarmas)
-        if: vars.PLATFORM_ENABLED == 'true'
-        run: |
-          terraform -chdir=iac/stacks/platform init -input=false
-          terraform -chdir=iac/stacks/platform apply -input=false -auto-approve
-
-      - name: Plataforma apagada
-        if: vars.PLATFORM_ENABLED != 'true'
-        run: echo "PLATFORM_ENABLED no es 'true'; el stack platform no se aplicó." >> "$GITHUB_STEP_SUMMARY"
-
   # ───────────────────────── Etapa 5 ─────────────────────────
-  cluster:
-    name: 5 · Configuración del clúster
-    needs: apply
-    if: vars.PLATFORM_ENABLED == 'true'
+  staging:
+    name: 5 · Staging
+    needs: shared
+    if: vars.STAGING_ENABLED == 'true'
     runs-on: ubuntu-24.04
     permissions:
       id-token: write
@@ -73,9 +67,55 @@ jobs:
           role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
       - uses: azure/setup-helm@v4
         with:
           version: v4.3.0
 
-      - name: Namespaces, nodos, permisos, enlace con el ALB y monitoreo
-        run: bash iac/scripts/apply-k8s.sh
+      - name: Apply de la plataforma (VPC, EKS, ALB, WAF, DNS, IAM, alarmas)
+        run: |
+          terraform -chdir=iac/stacks/platform init -input=false -backend-config=envs/staging.backend.hcl
+          terraform -chdir=iac/stacks/platform apply -input=false -auto-approve -var-file=envs/staging.tfvars
+
+      - name: Configuración del clúster (namespace, nodos, permisos, enlace con el ALB, monitoreo)
+        run: bash iac/scripts/apply-k8s.sh staging
+
+  # ───────────────────────── Etapa 6 ─────────────────────────
+  prod:
+    name: 6 · Producción
+    needs: [shared, staging]
+    if: ${{ !cancelled() && needs.shared.result == 'success' && needs.staging.result != 'failure' && vars.PROD_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    # Producción pide su propia aprobación, aparte de la de la base compartida.
+    environment: infra
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.3.0
+
+      - name: Apply de la plataforma (VPC, EKS, ALB, WAF, DNS, IAM, alarmas)
+        run: |
+          terraform -chdir=iac/stacks/platform init -input=false -backend-config=envs/prod.backend.hcl
+          terraform -chdir=iac/stacks/platform apply -input=false -auto-approve -var-file=envs/prod.tfvars
+
+      - name: Configuración del clúster (namespace, nodos, permisos, enlace con el ALB, monitoreo)
+        run: bash iac/scripts/apply-k8s.sh prod

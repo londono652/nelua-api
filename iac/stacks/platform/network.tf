@@ -3,7 +3,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 6.0"
 
-  name = var.project
+  name = local.name
   cidr = var.vpc_cidr
   azs  = var.azs
 
@@ -12,7 +12,7 @@ module "vpc" {
 
   enable_dns_hostnames = true
 
-  # Costo vs. resiliencia: un NAT en la demo, uno por zona en producción.
+  # Costo contra resiliencia: un NAT en staging, uno por zona en producción.
   enable_nat_gateway     = true
   single_nat_gateway     = !var.nat_per_az
   one_nat_gateway_per_az = var.nat_per_az
@@ -35,6 +35,6 @@ resource "aws_vpc_endpoint" "s3" {
   route_table_ids   = module.vpc.private_route_table_ids
 
   tags = {
-    Name = "${var.project}-s3"
+    Name = "${local.name}-s3"
   }
 }

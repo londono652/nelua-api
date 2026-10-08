@@ -24,7 +24,7 @@ spec:
           args: ["run", "/scripts/load.js"]
           env:
             - name: BASE_URL
-              value: "https://api.nelua.site"
+              value: "__BASE_URL__" # lo reemplaza run-in-cluster.sh con la URL del ambiente
             # La llave llega desde un Secret que crea run-in-cluster.sh.
             - name: API_KEY
               valueFrom:

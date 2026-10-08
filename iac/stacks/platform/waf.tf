@@ -13,7 +13,7 @@ locals {
 resource "aws_wafv2_ip_set" "load_test" {
   count = local.load_test_enabled ? 1 : 0
 
-  name               = "${var.project}-load-test"
+  name               = "${local.name}-load-test"
   scope              = "REGIONAL"
   ip_address_version = "IPV4"
   addresses          = local.load_test_addresses
@@ -21,7 +21,7 @@ resource "aws_wafv2_ip_set" "load_test" {
 
 resource "aws_wafv2_web_acl" "api" {
   #checkov:skip=CKV2_AWS_31:El logging completo del WAF a 10.000 RPS tiene un costo alto. Cada regla ya publica metricas y muestras de peticiones en CloudWatch; en produccion se activaria con filtro para registrar solo los bloqueos.
-  name  = var.project
+  name  = local.name
   scope = "REGIONAL"
 
   default_action {
@@ -48,7 +48,7 @@ resource "aws_wafv2_web_acl" "api" {
 
       visibility_config {
         cloudwatch_metrics_enabled = true
-        metric_name                = "${var.project}-allow-load-test"
+        metric_name                = "${local.name}-allow-load-test"
         sampled_requests_enabled   = true
       }
     }
@@ -72,7 +72,7 @@ resource "aws_wafv2_web_acl" "api" {
 
     visibility_config {
       cloudwatch_metrics_enabled = true
-      metric_name                = "${var.project}-rate-limit"
+      metric_name                = "${local.name}-rate-limit"
       sampled_requests_enabled   = true
     }
   }
@@ -95,7 +95,7 @@ resource "aws_wafv2_web_acl" "api" {
 
     visibility_config {
       cloudwatch_metrics_enabled = true
-      metric_name                = "${var.project}-common-rules"
+      metric_name                = "${local.name}-common-rules"
       sampled_requests_enabled   = true
     }
   }
@@ -118,14 +118,14 @@ resource "aws_wafv2_web_acl" "api" {
 
     visibility_config {
       cloudwatch_metrics_enabled = true
-      metric_name                = "${var.project}-known-bad-inputs"
+      metric_name                = "${local.name}-known-bad-inputs"
       sampled_requests_enabled   = true
     }
   }
 
   visibility_config {
     cloudwatch_metrics_enabled = true
-    metric_name                = var.project
+    metric_name                = local.name
     sampled_requests_enabled   = true
   }
 }

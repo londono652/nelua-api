@@ -3,11 +3,11 @@ name: infra
 # Pipeline de infraestructura. Este archivo solo orquesta: cada grupo vive en su
 # propio workflow y aparece como un bloque en el gráfico de la ejecución.
 #
-#   ┌─ Revisión (infra-review.yml) ──┐   ┌─ Aplicación (infra-apply.yml) ───────────┐
-#   │ 1 · Validación ─┐              │   │                                          │
-#   │                 ├─> 3 · Plan   │──>│ 4 · Apply ──> 5 · Configuración          │
-#   │ 2 · Seguridad  ─┘              │   │ (aprobación)      del clúster            │
-#   └────────────────────────────────┘   └──────────────────────────────────────────┘
+#   ┌─ Revisión (infra-review.yml) ──┐   ┌─ Aplicación (infra-apply.yml) ─────────────────────────┐
+#   │ 1 · Validación ─┐              │   │                                                        │
+#   │                 ├─> 3 · Plan   │──>│ 4 · Base compartida ─> 5 · Staging ─> 6 · Producción   │
+#   │ 2 · Seguridad  ─┘              │   │ (aprobación)           (interruptor)  (interruptor)    │
+#   └────────────────────────────────┘   └────────────────────────────────────────────────────────┘
 #
 # Pull request -> solo Revisión; el plan se publica como comentario.
 # Push a main  -> Revisión y, tras aprobación manual, Aplicación.

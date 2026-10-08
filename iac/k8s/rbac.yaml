@@ -4,9 +4,10 @@
 # app no puede crear ni ampliar roles, así que la API no puede darse más
 # permisos a sí misma en un despliegue.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: nelua-api-workloads-reader
+  namespace: nelua-api
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets"]
@@ -18,6 +19,23 @@ rules:
     resources: ["horizontalpodautoscalers"]
     verbs: ["get", "list"]
 ---
+# Las cargas se leen solo en el namespace de la aplicación, no en kube-system
+# ni en monitoring.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nelua-api-workloads-reader
+  namespace: nelua-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nelua-api-workloads-reader
+subjects:
+  - kind: ServiceAccount
+    name: nelua-api
+    namespace: nelua-api
+---
+# Los nodos no pertenecen a un namespace: el permiso es a nivel de clúster.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -27,7 +45,6 @@ rules:
     resources: ["nodes"]
     verbs: ["get", "list"]
 ---
-# Los nodos no pertenecen a un namespace: el permiso es a nivel de clúster.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -39,43 +56,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: nelua-api
-    namespace: staging
-  - kind: ServiceAccount
-    name: nelua-api
-    namespace: prod
----
-# Las cargas se leen solo en los namespaces de la aplicación (RoleBinding por
-# namespace), no en kube-system ni en monitoring.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: nelua-api-workloads-reader
-  namespace: staging
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: nelua-api-workloads-reader
-subjects:
-  - kind: ServiceAccount
-    name: nelua-api
-    namespace: staging
-  - kind: ServiceAccount
-    name: nelua-api
-    namespace: prod
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: nelua-api-workloads-reader
-  namespace: prod
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: nelua-api-workloads-reader
-subjects:
-  - kind: ServiceAccount
-    name: nelua-api
-    namespace: staging
-  - kind: ServiceAccount
-    name: nelua-api
-    namespace: prod
+    namespace: nelua-api

@@ -11,7 +11,7 @@ name: app
 #   └────────────────────────────────────────────┘   └────────────────────────────────────┘
 #
 # Pull request -> CI sin publicar la imagen (etapas 1 a 3).
-# Push a main  -> CI completo y, si la plataforma está encendida, CD.
+# Push a main  -> CI completo y, si staging está encendido, CD.
 on:
   pull_request:
     paths:
@@ -45,7 +45,7 @@ jobs:
   cd:
     name: CD
     needs: ci
-    # Interruptor: solo se despliega desde main y con la plataforma encendida.
+    # Interruptor: solo se despliega desde main y con staging encendido.
     if: github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
     uses: ./.github/workflows/app-cd.yml
     permissions:

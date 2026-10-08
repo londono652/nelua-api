@@ -48,7 +48,7 @@ def load_settings() -> Settings:
         environment=env("ENVIRONMENT", "local"),
         cluster_source=env("CLUSTER_SOURCE", "sample"),
         budget_source=env("BUDGET_SOURCE", "sample"),
-        watch_namespaces=_csv(env("WATCH_NAMESPACES", "prod,staging")),
+        watch_namespaces=_csv(env("WATCH_NAMESPACES", "nelua-api")),
         cluster_refresh_seconds=int(env("CLUSTER_REFRESH_SECONDS", "15")),
         budget_refresh_seconds=int(env("BUDGET_REFRESH_SECONDS", "900")),
         alert_pod_restarts=int(env("ALERT_POD_RESTARTS", "3")),

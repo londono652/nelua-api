@@ -1,11 +1,11 @@
 # Conecta el Service de la API con el target group del ALB que creó Terraform.
 # EKS Auto Mode registra y retira las IPs de los pods automáticamente.
-# Plantilla: iac/scripts/apply-k8s.sh reemplaza ${ENVIRONMENT} y ${TARGET_GROUP_ARN}.
+# Plantilla: iac/scripts/apply-k8s.sh reemplaza ${TARGET_GROUP_ARN} con el del ambiente.
 apiVersion: eks.amazonaws.com/v1
 kind: TargetGroupBinding
 metadata:
   name: nelua-api
-  namespace: ${ENVIRONMENT}
+  namespace: nelua-api
 spec:
   serviceRef:
     name: nelua-api

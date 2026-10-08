@@ -50,19 +50,30 @@ La documentación interactiva queda en `/docs`.
 
 ## La arquitectura
 
-![Arquitectura de producción en AWS](docs/arquitectura.png)
+Hay dos ambientes, staging y producción. Cada uno tiene su red, su clúster y su
+balanceador, y los crea el mismo código de Terraform con un archivo de valores
+distinto. Por eso los dos diagramas son casi iguales: cambian la cantidad de NAT
+Gateways, las réplicas y la protección del balanceador.
 
-El diagrama es el diseño de producción. Para el reto desplegué una versión
-reducida por costo (por ejemplo, un NAT Gateway en vez de tres). Las diferencias
-están en [`docs/decisiones.md`](docs/decisiones.md#producción-y-demo) y el archivo
-editable es [`docs/arquitectura.drawio`](docs/arquitectura.drawio).
+**Staging** es el que desplegué para el reto, y donde probé la API de punta a punta.
+
+![Ambiente de staging](docs/arquitectura-staging.png)
+
+**Producción** está definida en el código y el pipeline la planea en cada
+ejecución, pero queda apagada para no pagar dos clústeres.
+
+![Ambiente de producción](docs/arquitectura-produccion.png)
+
+Las diferencias entre los dos están explicadas en
+[`docs/decisiones.md`](docs/decisiones.md#staging-y-producción). Los archivos
+editables de los diagramas están en [`docs/`](docs).
 
 En resumen:
 
 - Solo está abierto el puerto 443, con certificado de ACM. Delante hay un WAF con
   límite por IP y reglas administradas. Los pods no tienen IP pública.
-- Hay tres zonas y mínimo tres réplicas repartidas entre ellas. Los despliegues no
-  tumban el servicio.
+- Hay tres zonas y, en producción, mínimo tres réplicas repartidas entre ellas.
+  Los despliegues no tumban el servicio.
 - La API no tiene estado y responde desde memoria. Para llegar a 10.000 RPS
   escalan los pods (HPA) y los nodos (EKS Auto Mode).
 - No hay secretos en el código ni en GitHub. Los pipelines entran a AWS por OIDC,
@@ -78,8 +89,8 @@ Son dos pipelines independientes. Cada uno se dispara solo cuando cambia lo suyo
 |---|---|---|
 | Aplicación | CI | Build y test, calidad y seguridad, build de imagen, push al registry |
 | | CD | Deploy a staging, deploy a producción (con aprobación) |
-| Infraestructura | Revisión | Validación, seguridad, plan |
-| | Aplicación | Apply (con aprobación), configuración del clúster |
+| Infraestructura | Revisión | Validación, seguridad, plan de los dos ambientes |
+| | Aplicación | Base compartida (con aprobación), staging, producción |
 
 El rollback tiene tres niveles. Helm revierte si el despliegue no termina bien. Si
 termina pero la verificación falla, un paso del pipeline vuelve a la versión

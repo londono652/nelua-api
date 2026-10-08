@@ -45,8 +45,8 @@ esa imagen se despliega.
 | CI | 2 · Calidad y seguridad | `ruff` (estilo, errores y las reglas de seguridad de bandit) y Trivy sobre el repositorio, que busca dependencias vulnerables y secretos escritos en el código | Código que no pasa el linter, una dependencia con vulnerabilidad alta o crítica que ya tiene corrección, o un secreto en el repo |
 | CI | 3 · Build de imagen | Construye la imagen `arm64` y la escanea con Trivy | Una vulnerabilidad alta o crítica con corrección disponible |
 | CI | 4 · Push al registry | Publica en ECR la imagen que se escaneó, con el SHA del commit como tag | |
-| CD | 5 · Deploy a staging | Despliega con Helm, verifica la versión y corre una prueba de humo con k6 | Pods que no arrancan, versión incorrecta, errores o latencia alta |
-| CD | 6 · Deploy a producción | Lo mismo que en staging, después de una aprobación manual | Lo mismo |
+| CD | 5 · Deploy a staging | Despliega con Helm en el clúster de staging, verifica la versión y corre una prueba de humo con k6 | Pods que no arrancan, versión incorrecta, errores o latencia alta |
+| CD | 6 · Deploy a producción | Lo mismo, en el clúster de producción y después de una aprobación manual. Solo corre si producción está encendida | Lo mismo |
 
 En un pull request corre CI hasta la etapa 3. Se valida todo, pero no se publica
 ni se despliega.
@@ -54,13 +54,14 @@ ni se despliega.
 Algunas cosas que conviene saber del pipeline:
 
 - No guarda llaves. Entra a AWS por OIDC y asume un rol que solo puede publicar en
-  su repositorio de ECR y desplegar en sus dos namespaces.
+  su repositorio de ECR y desplegar en el namespace de la aplicación.
 - La imagen se construye una sola vez. La que pasa el escaneo viaja como artefacto
   a la etapa de push, así que lo que se probó en staging es lo mismo que llega a
   producción.
 - El tag es el SHA del commit y ECR no deja sobrescribirlo.
-- No conoce la infraestructura. El nombre del clúster, la URL del registry, los
-  dominios y el nombre del secreto los lee de Parameter Store (`/nelua-api/...`).
+- No conoce la infraestructura. El nombre del clúster de cada ambiente, la URL del
+  registry, los dominios y el nombre del secreto los lee de Parameter Store
+  (`/nelua-api/...`).
 
 ## Estrategia de rollback
 
@@ -72,7 +73,7 @@ niveles.
 |---|---|---|---|
 | 1. Durante el despliegue | Los pods nuevos no arrancan o no pasan el health check | `helm upgrade --wait --rollback-on-failure`: Helm deshace el cambio | Automático |
 | 2. Después del despliegue | Los pods arrancaron, pero falla la verificación de versión o la prueba de humo | El paso "Rollback automático" del pipeline hace `helm rollback` a la revisión anterior y vuelve a verificar | Automático |
-| 3. Más tarde | El problema aparece cuando el pipeline ya terminó en verde | Workflow `rollback`, con el botón *Run workflow*. Se elige el entorno y, si se quiere, la revisión | Una persona |
+| 3. Más tarde | El problema aparece cuando el pipeline ya terminó en verde | Workflow `rollback`, con el botón *Run workflow*. Se elige el ambiente y, si se quiere, la revisión | Una persona |
 
 Antes de llegar a esos niveles hay dos protecciones. El despliegue es gradual, con
 `maxUnavailable: 0`, así que los pods viejos solo se retiran cuando los nuevos
@@ -83,9 +84,9 @@ Sobre el nivel 2:
 
 - Antes de desplegar, `deploy.sh` anota qué revisión está sirviendo. El rollback
   vuelve a esa revisión, no a "la anterior que haya".
-- El rollback no se da por bueno hasta que `verify.sh` confirma que el entorno
+- El rollback no se da por bueno hasta que `verify.sh` confirma que el ambiente
   responde con la versión restaurada.
-- El pipeline queda en rojo aunque el rollback salga bien. El entorno está sano,
+- El pipeline queda en rojo aunque el rollback salga bien. El ambiente está sano,
   pero la versión nueva no pasó y no sigue hacia producción.
 - Es un paso dentro del mismo job. Si fuera un job aparte en `prod`, volvería a
   pedir aprobación, y revertir no debería esperar a nadie.
@@ -106,9 +107,10 @@ flowchart LR
     SE["2 · Seguridad de la IaC"] --> PL
   end
   subgraph Aplicación
-    A["4 · Apply"] --> C["5 · Configuración del clúster"]
+    B["4 · Base compartida"] --> ST["5 · Staging"]
+    ST --> PR["6 · Producción"]
   end
-  PL -->|aprobación manual| A
+  PL -->|aprobación manual| B
 ```
 
 Aquí los grupos no se llaman CI y CD, porque no se construye ni se despliega un
@@ -119,9 +121,18 @@ modifica nada. Aplicación es el cambio.
 |---|---|---|
 | Revisión | 1 · Validación | `terraform fmt -check` y `terraform validate` de los tres stacks |
 | Revisión | 2 · Seguridad de la IaC | `checkov`. Las excepciones están justificadas junto a cada recurso |
-| Revisión | 3 · Plan | `terraform plan` por stack. En un pull request se publica como comentario |
-| Aplicación | 4 · Apply | Después de la aprobación: stack `persistent` y, si `PLATFORM_ENABLED` es `true`, stack `platform` |
-| Aplicación | 5 · Configuración del clúster | Namespaces, pool de nodos, permisos de lectura de la API, enlace con el ALB y monitoreo |
+| Revisión | 3 · Plan | `terraform plan` de la base compartida, de staging y de producción. En un pull request se publica como comentario |
+| Aplicación | 4 · Base compartida | Después de la aprobación, aplica el stack `persistent`: registro de imágenes, certificado y secretos |
+| Aplicación | 5 · Staging | Si `STAGING_ENABLED` es `true`, aplica el stack `platform` con los valores de staging y deja su clúster configurado |
+| Aplicación | 6 · Producción | Lo mismo con los valores de producción, si `PROD_ENABLED` es `true`. Pide su propia aprobación |
+
+Staging y producción son el mismo stack de Terraform. Cada uno tiene su archivo
+de valores y su estado en `iac/stacks/platform/envs/`. El plan de producción
+aparece en cada ejecución aunque el ambiente esté apagado, así se ve qué crearía
+el código si se encendiera.
+
+La configuración del clúster es igual en los dos: namespace, pool de nodos,
+permisos de lectura de la API, enlace con el ALB y monitoreo.
 
 El stack `bootstrap` no se aplica desde el pipeline. Crea el bucket del estado y
 los roles con los que el pipeline entra a AWS, así que se aplica a mano una vez.
@@ -134,11 +145,11 @@ pipeline. El plan muestra qué se va a deshacer antes de aprobarlo.
 
 | Script | Uso |
 |---|---|
-| `scripts/deploy.sh <entorno> <tag>` | Despliega una versión con Helm |
-| `scripts/verify.sh <entorno> [versión]` | Comprueba la versión y los endpoints desde la URL pública |
-| `scripts/smoke.sh <entorno>` | Prueba de humo con k6 |
-| `scripts/rollback.sh <entorno> [revisión]` | Vuelve a una revisión anterior y verifica |
-| `load-tests/run-in-cluster.sh` | Prueba de carga de 10.000 RPS desde dentro del clúster |
+| `scripts/deploy.sh <ambiente> <tag>` | Despliega una versión con Helm |
+| `scripts/verify.sh <ambiente> [versión]` | Comprueba la versión y los endpoints desde la URL pública |
+| `scripts/smoke.sh <ambiente>` | Prueba de humo con k6 |
+| `scripts/rollback.sh <ambiente> [revisión]` | Vuelve a una revisión anterior y verifica |
+| `load-tests/run-in-cluster.sh [ambiente]` | Prueba de carga de 10.000 RPS desde dentro del clúster. En staging sube antes el autoescalado a los valores de producción |
 
 ## Configuración del repositorio
 
@@ -148,8 +159,9 @@ Variables, en *Settings > Secrets and variables > Actions > Variables*:
 |---|---|
 | `AWS_APP_ROLE_ARN` | Rol del pipeline de la aplicación (salida `gha_app_role_arn` del stack bootstrap) |
 | `AWS_INFRA_ROLE_ARN` | Rol del pipeline de infraestructura (salida `gha_infra_role_arn`) |
-| `PLATFORM_ENABLED` | `true` para crear el clúster. Con `false` queda apagado |
-| `DEPLOY_ENABLED` | `true` para desplegar. Necesita la plataforma encendida |
+| `STAGING_ENABLED` | `true` para crear o actualizar staging. Con `false` el pipeline no lo toca |
+| `PROD_ENABLED` | Lo mismo para producción. También habilita el deploy a producción |
+| `DEPLOY_ENABLED` | `true` para desplegar la API. Necesita staging encendido |
 
 Environments, en *Settings > Environments*: `staging`, `prod` e `infra`. Los dos
 últimos llevan *Required reviewers*.

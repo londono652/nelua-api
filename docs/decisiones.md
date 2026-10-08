@@ -82,12 +82,12 @@ muestran detalles internos.
 
 Usé API key porque los consumidores son pocos y la API es interna y de solo
 lectura. La llave no está en el código ni en el repositorio. Vive en Secrets
-Manager, hay una por entorno, la API la vuelve a leer cada 5 minutos (se puede
+Manager, hay una por ambiente, la API la vuelve a leer cada 5 minutos (se puede
 rotar sin redesplegar) y la comparación se hace en tiempo constante.
 
 Nadie tiene que mandarle la llave a nadie. El recorrido es este:
 
-1. Terraform genera una llave aleatoria por entorno y la guarda en Secrets Manager.
+1. Terraform genera una llave aleatoria por ambiente y la guarda en Secrets Manager.
 2. El pod la lee con su rol de IAM (Pod Identity). Al chart y al pipeline solo les
    llega el nombre del secreto, nunca el valor.
 3. Cada consumidor la lee del mismo secreto con su propio permiso de IAM.
@@ -106,7 +106,11 @@ reto evalúa.
 
 ## 2. La arquitectura
 
-![Arquitectura de producción en AWS](arquitectura.png)
+Hay un diagrama por ambiente. Son el mismo diseño con distintos valores.
+
+![Ambiente de staging](arquitectura-staging.png)
+
+![Ambiente de producción](arquitectura-produccion.png)
 
 | Requisito | Cómo se cumple |
 |---|---|
@@ -131,6 +135,11 @@ que puede llegar mientras el clúster escala. Ese número sale de la prueba de c
 Cuando el pico pasa, el HPA baja despacio para no oscilar y los nodos vacíos se
 eliminan. La capacidad extra se paga mientras se usa.
 
+La prueba de carga la corro contra staging. Para que mida lo mismo que mediría en
+producción, el script le sube antes el autoescalado a los valores de producción
+(`values-loadtest.yaml`) y lo devuelve al terminar. La red y el clúster son
+equivalentes; la diferencia que queda es que staging sale por un solo NAT.
+
 El enunciado no dice cuánto dura el pico ni si es predecible. Asumí que es diario
 y de pocas horas. La arquitectura es la misma en cualquier caso y lo que cambia
 son parámetros de operación:
@@ -149,29 +158,50 @@ detrás de las mismas IP, ese límite los bloquearía. Por eso es una variable
 `load_test_mode`. En producción limitaría por API key y no por IP, para que cada
 consumidor tenga su cuota sin importar desde dónde llama.
 
-### Producción y demo
+### Staging y producción
 
-El diseño y los valores por defecto de la IaC son los de producción. Lo que
-desplegué para el reto es la misma arquitectura con algunas cosas reducidas, para
-no pagar disponibilidad que una demo de pocas horas no necesita. Cada diferencia
-es un parámetro o está explicada aquí.
+Hay dos ambientes y cada uno tiene su propia red, su clúster, su balanceador y su
+WAF. Los crea el mismo stack de Terraform (`iac/stacks/platform`). Lo que cambia
+entre uno y otro está en dos archivos de valores, `envs/staging.tfvars` y
+`envs/prod.tfvars`, y cada ambiente guarda su estado por separado.
 
-| Aspecto | Producción | Demo | Cómo se cambia |
-|---|---|---|---|
-| NAT Gateway | Uno por zona, para que la caída de una zona no deje a las otras sin salida | Uno solo | `nat_per_az` en `iac/stacks/platform/terraform.tfvars` |
-| Entornos | Staging y producción en cuentas de AWS separadas | Un clúster con dos namespaces | Aplicar el stack `platform` una vez por cuenta |
-| Vida de la plataforma | Permanente, con protección contra borrado en el ALB | Se apaga con `ops-down` | Activar `enable_deletion_protection` |
-| Access logs del ALB | Activos, con retención corta o muestreo | Desactivados | Agregar el bucket y el bloque `access_logs` |
-| Endpoint del clúster | Restringido a rangos conocidos, o privado | Público, protegido por IAM | `endpoint_public_access_cidrs` |
-| Permisos del pipeline de IaC | Acotados con un *permission boundary* y un rol de solo lectura para el plan | `AdministratorAccess`, limitado por la confianza OIDC y la aprobación manual | Stack `bootstrap` |
-| Límite del WAF | Por API key | Por IP | Regla de la web ACL |
-| Autenticación | JWT con Cognito, máquina a máquina | API key | Sección 1 |
-| Alertas | Por consumo del presupuesto de error | Por umbral, en CloudWatch | Sección 3 |
-| Cifrado | Llaves KMS propias donde haya requisito de cumplimiento | Llaves administradas por AWS | Excepciones justificadas junto a cada recurso |
+Para el reto desplegué staging, que es donde probé la API de punta a punta.
+Producción está definida y el pipeline la planea en cada ejecución, pero la dejé
+apagada para no pagar dos clústeres. Encenderla es poner `PROD_ENABLED` en `true`.
 
-No reduje nada de lo que el reto evalúa: siguen las tres zonas, el mínimo de tres
-réplicas repartidas, HTTPS como único protocolo, el WAF, las subnets privadas, los
-secretos fuera del código, el autoescalado y el rollback.
+| | Staging (desplegado) | Producción (definido) |
+|---|---|---|
+| Red | VPC `10.0.0.0/16`, tres zonas | VPC `10.1.0.0/16`, tres zonas |
+| NAT Gateway | Uno solo | Uno por zona, para que la caída de una zona no deje a las otras sin salida |
+| Clúster | EKS Auto Mode propio | EKS Auto Mode propio |
+| Réplicas de la API | Mínimo 2, máximo 4 | Mínimo 3 repartidas entre zonas, máximo 30 |
+| Balanceador | Sin protección contra borrado, porque se crea y se destruye a demanda | Protegido contra borrado |
+| Alarmas | Creadas, sin destinatario | Con aviso por correo (`alert_email`) |
+| Vida | Se apaga con `ops-down` | Permanente |
+
+Los dos comparten el registro de imágenes, el certificado y la zona DNS. El
+registro tiene que ser compartido para poder promover la misma imagen de un
+ambiente al otro.
+
+Staging no se quedó sin lo que el reto evalúa. Tiene tres zonas, HTTPS como único
+protocolo, WAF, subnets privadas, secretos fuera del código, autoescalado y
+rollback, igual que producción.
+
+Hay una simplificación frente a un entorno real: los dos ambientes viven en la
+misma cuenta de AWS, separados por VPC y por nombres. Lo normal es una cuenta por
+ambiente. El código no cambiaría, solo las credenciales con las que se aplica.
+
+Y hay cosas que dejaría distintas en producción y que no implementé:
+
+| Aspecto | Hoy, en los dos ambientes | En producción lo cambiaría por |
+|---|---|---|
+| Access logs del ALB | Desactivados | Activos, con retención corta o muestreo |
+| Endpoint del clúster | Público, protegido por IAM | Restringido a rangos conocidos, o privado |
+| Permisos del pipeline de IaC | `AdministratorAccess`, limitado por la confianza OIDC y la aprobación manual | Un *permission boundary* y un rol de solo lectura para el plan |
+| Límite del WAF | Por IP | Por API key |
+| Autenticación | API key | JWT con Cognito, máquina a máquina |
+| Alertas | Por umbral, en CloudWatch | Por consumo del presupuesto de error |
+| Cifrado | Llaves administradas por AWS | Llaves KMS propias donde haya requisito de cumplimiento |
 
 ### Alternativas que consideré
 
@@ -181,7 +211,7 @@ secretos fuera del código, el autoescalado y el rollback.
 | Entrada | ALB con WAF | API Gateway | Con el cómputo en EKS, API Gateway no reemplaza al balanceador. Necesita uno detrás (VPC Link), así que sería una capa más. Cobra por petición, y a 10.000 RPS, aunque sea pocas horas al día, son miles de millones de peticiones al mes: sale órdenes de magnitud más caro que un ALB. Su cuota por defecto es de 10.000 RPS, el mismo número del pico. Pierdo cuotas por consumidor y autenticación en el borde. Si eso fuera un requisito, lo pondría delante del ALB. |
 | Entrada | ALB con WAF | CloudFront delante | Las respuestas cambian cada 15 segundos y van autenticadas, así que casi no hay qué cachear. |
 | Nodos | Auto Mode | Node groups administrados | Hay menos piezas que mantener, porque no instalo Karpenter ni el controlador de balanceadores. Se paga un recargo sobre el precio de las instancias. |
-| Entornos | Un clúster, dos namespaces | Un clúster por entorno | Un segundo plano de control duplica el costo fijo. Lo amplío en la sección 3. |
+| Ambientes | Un clúster por ambiente | Un clúster con dos namespaces | Compartir clúster ahorra un plano de control, pero un problema del clúster afecta a los dos ambientes y una actualización de Kubernetes no se puede probar primero en staging. Para no pagar dos, producción queda apagada mientras no se usa. |
 | Persistencia | Ninguna | DynamoDB o Redis | Sección 1. |
 
 ### Un riesgo que tengo identificado
@@ -193,25 +223,27 @@ con Auto Mode, pasaría a node groups administrados con el AWS Load Balancer Con
 
 ## 3. Los temas "deseables"
 
-### Paridad entre entornos sin datos sensibles en staging
+### Paridad entre ambientes sin datos sensibles en staging
 
-La imagen que se prueba en staging es la misma que llega a producción. Se
-construye una sola vez y el tag es el SHA del commit, que ECR no deja sobrescribir.
-El chart y la IaC también son los mismos. Las diferencias entre entornos caben en
-dos archivos de valores y son de tamaño: réplicas mínimas y máximas.
+Los dos ambientes salen del mismo código. La infraestructura es el mismo stack de
+Terraform con otro archivo de valores. Los manifiestos del clúster son idénticos,
+hasta el namespace se llama igual. El chart es el mismo y la imagen también: se
+construye una sola vez, el tag es el SHA del commit y ECR no deja sobrescribirlo.
 
-Los secretos sí están separados. Cada entorno tiene su API key y su rol de IAM, y
+Lo que cambia entre ambientes es el tamaño (réplicas, cantidad de NAT) y está a la
+vista en `envs/*.tfvars` y en `values-*.yaml`. Como cada ambiente tiene su
+clúster, una actualización de Kubernetes o un cambio en la red se prueban primero
+en staging.
+
+Los secretos están separados. Cada ambiente tiene su API key y su rol de IAM, y
 el pod de staging no puede leer el secreto de producción.
 
 Esta API no guarda datos de clientes, así que no hay nada sensible que copiar. En
 un sistema con base de datos, staging trabajaría con datos sintéticos o
 anonimizados generados por un job, nunca con una copia de producción.
 
-Lo que no está resuelto es el aislamiento. Staging y producción comparten clúster
-y balanceador. Los separan el namespace, los permisos y el target group, pero un
-problema del clúster afecta a los dos, y una actualización de Kubernetes no se
-puede probar primero en staging. Con más presupuesto aplicaría el mismo stack
-`platform` en dos cuentas de AWS, sin tocar el código.
+Lo que falta para que el aislamiento sea completo es separar las cuentas de AWS.
+Hoy los dos ambientes están en la misma.
 
 ### SLOs, SLIs y alertas
 
@@ -251,32 +283,34 @@ porque esas no salen de memoria. Los logs deberían llevar el mismo identificado
 
 Varias decisiones salieron de mirar el costo. Los nodos son Graviton y Spot, con
 On-Demand de respaldo, porque la API no tiene estado y perder un nodo no pierde
-nada. No hay base de datos ni caché administrada. Los dos entornos comparten clúster.
+nada. No hay base de datos ni caché administrada. Y producción queda apagada
+mientras no se usa, para no pagar dos planos de control.
 
-El NAT Gateway es el caso más claro: producción lleva uno por zona y la demo uno
+El NAT Gateway es el caso más claro: producción lleva uno por zona y staging uno
 solo. La diferencia son unos 65 USD al mes, que es lo que cuesta esa disponibilidad.
 
 También puse topes. El pool de nodos no pasa de 200 vCPU y el HPA tiene un máximo
 de réplicas, para que un error o un ataque no escalen sin límite. Y todo lo que
-cuesta por hora se puede apagar con `PLATFORM_ENABLED` y el workflow `ops-down`, y
-volver a crear desde cero con el pipeline.
+cuesta por hora se puede apagar por ambiente (`STAGING_ENABLED`, `PROD_ENABLED` y
+el workflow `ops-down`) y volver a crear desde cero con el pipeline.
 
 Por último, el gasto se puede consultar en la misma API, en `/v1/budget`, y hay
 una alerta cuando el presupuesto está en riesgo.
 
-Estos son órdenes de magnitud mensuales en reposo, en us-east-2 y con precios de
-lista. Habría que confirmarlos con la calculadora de AWS.
+Estos son órdenes de magnitud mensuales de un ambiente en reposo, en us-east-2 y
+con precios de lista. Habría que confirmarlos con la calculadora de AWS.
 
 | Componente | USD/mes aprox. |
 |---|---|
 | Plano de control de EKS | 73 |
 | Nodos (unas 3 instancias Graviton pequeñas, casi todas Spot, más el recargo de Auto Mode) | 50 a 90 |
-| NAT Gateway (uno en la demo; tres en producción serían unos 99) | 33 más tráfico |
+| NAT Gateway (uno en staging; los tres de producción serían unos 99) | 33 más tráfico |
 | ALB | 17 más uso |
 | WAF (web ACL y reglas) | 8, más 0,60 por millón de peticiones |
 | Route 53, Secrets Manager, ECR y alarmas | menos de 5 |
-| Total en reposo, demo | 190 a 230 |
-| Total en reposo, producción con tres NAT | 255 a 295 |
+| Staging en reposo | 190 a 230 |
+| Producción en reposo, con tres NAT | 255 a 295 |
+| Los dos encendidos | 445 a 525 |
 
 Hay un dato que vale la pena tener presente. Con 10.000 RPS sostenidos, lo más
 caro ya no es el cómputo. El WAF cobra por petición, y 10.000 RPS durante todo el
@@ -321,5 +355,5 @@ apruebe alguien distinto (`prevent_self_review`) y proteger la rama `main`.
   mala alcanza a recibir todo el tráfico antes de que se detecte.
 - Un rol de IAM de solo lectura para el `plan` de Terraform en pull requests, y un
   *permission boundary* para el rol que aplica.
-- Entornos en cuentas de AWS separadas.
+- Una cuenta de AWS por ambiente.
 - Access logs del ALB con muestreo.

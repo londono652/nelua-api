@@ -1,0 +1,6 @@
+# Se aplica ENCIMA de values-staging.yaml durante la prueba de carga, para que
+# staging escale igual que producción mientras dura la prueba.
+#   bash cicd/load-tests/run-in-cluster.sh staging
+autoscaling:
+  minReplicas: 3
+  maxReplicas: 30

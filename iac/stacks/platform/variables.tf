@@ -16,8 +16,18 @@ variable "domain" {
   default     = "nelua.site"
 }
 
+variable "environment" {
+  description = "Ambiente que crea este stack. Cada ambiente tiene su propio archivo de valores y su propio estado (carpeta envs/)"
+  type        = string
+
+  validation {
+    condition     = contains(["staging", "prod"], var.environment)
+    error_message = "El ambiente debe ser staging o prod."
+  }
+}
+
 variable "vpc_cidr" {
-  description = "Rango de direcciones de la VPC"
+  description = "Rango de direcciones de la VPC. Distinto por ambiente, para poder conectarlas entre sí si hiciera falta"
   type        = string
   default     = "10.0.0.0/16"
 }
@@ -29,7 +39,7 @@ variable "azs" {
 }
 
 variable "nat_per_az" {
-  description = "true = un NAT Gateway por zona (producción). false = uno solo (demo, más barato)"
+  description = "true = un NAT Gateway por zona (producción). false = uno solo (staging, más barato)"
   type        = bool
   default     = true
 }
@@ -74,4 +84,10 @@ variable "alert_email" {
   description = "Correo que recibe las alarmas de CloudWatch. Vacío = se crean las alarmas sin suscripción"
   type        = string
   default     = ""
+}
+
+variable "alb_deletion_protection" {
+  description = "Protección contra borrado del balanceador. Activa en producción; apagada en staging, que se crea y se destruye a demanda"
+  type        = bool
+  default     = true
 }

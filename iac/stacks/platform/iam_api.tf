@@ -1,8 +1,8 @@
 # Identidad de la API dentro de AWS (EKS Pod Identity).
 #
 # El pod no tiene llaves de AWS: EKS le entrega credenciales temporales del rol
-# asociado a su cuenta de servicio. Hay un rol por entorno, así el pod de
-# staging no puede leer el secreto de prod.
+# asociado a su cuenta de servicio. Cada ambiente tiene su rol, así que el pod
+# de staging no puede leer el secreto de producción.
 data "aws_iam_policy_document" "api_trust" {
   statement {
     actions = ["sts:AssumeRole", "sts:TagSession"]
@@ -15,17 +15,14 @@ data "aws_iam_policy_document" "api_trust" {
 }
 
 resource "aws_iam_role" "api" {
-  for_each = local.environments
-
-  name               = "${var.project}-${each.key}"
-  description        = "Rol de los pods de ${var.project} en ${each.key}"
+  name               = local.name
+  description        = "Rol de los pods de ${var.project} en ${var.environment}"
   assume_role_policy = data.aws_iam_policy_document.api_trust.json
 }
 
-# Solo lectura y solo lo que la API usa: los presupuestos de la cuenta y SU secreto.
+# Solo lectura y solo lo que la API usa: los presupuestos de la cuenta y el
+# secreto de SU ambiente.
 data "aws_iam_policy_document" "api_permissions" {
-  for_each = local.environments
-
   statement {
     sid       = "ReadBudgets"
     actions   = ["budgets:ViewBudget"]
@@ -35,24 +32,20 @@ data "aws_iam_policy_document" "api_permissions" {
   statement {
     sid       = "ReadOwnApiKeys"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = ["arn:aws:secretsmanager:${var.region}:${local.account_id}:secret:${var.project}/${each.key}/api-keys-*"]
+    resources = ["arn:aws:secretsmanager:${var.region}:${local.account_id}:secret:${var.project}/${var.environment}/api-keys-*"]
   }
 }
 
 resource "aws_iam_role_policy" "api" {
-  for_each = local.environments
-
   name   = "read-only"
-  role   = aws_iam_role.api[each.key].id
-  policy = data.aws_iam_policy_document.api_permissions[each.key].json
+  role   = aws_iam_role.api.id
+  policy = data.aws_iam_policy_document.api_permissions.json
 }
 
-# Enlaza el rol con la cuenta de servicio "nelua-api" del namespace del entorno.
+# Enlaza el rol con la cuenta de servicio de la API en su namespace.
 resource "aws_eks_pod_identity_association" "api" {
-  for_each = local.environments
-
   cluster_name    = module.eks.cluster_name
-  namespace       = each.key
+  namespace       = local.app_namespace
   service_account = var.project
-  role_arn        = aws_iam_role.api[each.key].arn
+  role_arn        = aws_iam_role.api.arn
 }

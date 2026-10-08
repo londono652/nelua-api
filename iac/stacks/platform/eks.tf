@@ -1,6 +1,13 @@
 data "aws_caller_identity" "current" {}
 
 locals {
+  # Prefijo de todo lo que crea este stack: nelua-api-staging o nelua-api-prod.
+  name = "${var.project}-${var.environment}"
+
+  # Namespace de la aplicación. Es el mismo en todos los ambientes: cada uno
+  # tiene su propio clúster, así que los manifiestos son idénticos.
+  app_namespace = var.project
+
   account_id   = data.aws_caller_identity.current.account_id
   admin_policy = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   edit_policy  = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSEditPolicy"
@@ -11,7 +18,7 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 21.0"
 
-  name               = var.project
+  name               = local.name
   kubernetes_version = var.kubernetes_version
 
   vpc_id     = module.vpc.vpc_id
@@ -54,7 +61,7 @@ module "eks" {
       }
     }
 
-    # El pipeline de la app solo puede desplegar en sus dos namespaces.
+    # El pipeline de la app solo puede desplegar en el namespace de la aplicación.
     pipeline_app = {
       principal_arn = "arn:aws:iam::${local.account_id}:role/${var.project}-gha-app"
       policy_associations = {
@@ -62,7 +69,7 @@ module "eks" {
           policy_arn = local.edit_policy
           access_scope = {
             type       = "namespace"
-            namespaces = ["staging", "prod"]
+            namespaces = [local.app_namespace]
           }
         }
       }

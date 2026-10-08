@@ -15,12 +15,12 @@ source "$(dirname "$0")/lib.sh"
 ENVIRONMENT="$1"
 REVISION="${2:-}"
 
-connect_cluster
-FROM=$(current_revision "$ENVIRONMENT")
-FAILED_VERSION=$(deployed_version "$ENVIRONMENT")
+connect_cluster "$ENVIRONMENT"
+FROM=$(current_revision)
+FAILED_VERSION=$(deployed_version)
 
 echo "Historial de $ENVIRONMENT antes del rollback:"
-helm history "$RELEASE" --namespace "$ENVIRONMENT" --max 5
+helm history "$RELEASE" --namespace "$NAMESPACE" --max 5
 
 if [ -z "$REVISION" ] && [ "${FROM:-1}" -le 1 ]; then
   summary "No hay una revisión anterior en **$ENVIRONMENT** a la cual volver (era el primer despliegue)."
@@ -28,9 +28,9 @@ if [ -z "$REVISION" ] && [ "${FROM:-1}" -le 1 ]; then
 fi
 
 # Sin número, Helm vuelve a la revisión anterior.
-helm rollback "$RELEASE" ${REVISION:+"$REVISION"} --namespace "$ENVIRONMENT" --wait --timeout 5m
+helm rollback "$RELEASE" ${REVISION:+"$REVISION"} --namespace "$NAMESPACE" --wait --timeout 5m
 
-RESTORED_VERSION=$(deployed_version "$ENVIRONMENT")
+RESTORED_VERSION=$(deployed_version)
 summary "### Rollback en $ENVIRONMENT"
 summary "Se retiró la versión \`$FAILED_VERSION\` (revisión $FROM) y se restauró \`$RESTORED_VERSION\` (revisión ${REVISION:-anterior})."
 

@@ -58,7 +58,7 @@ spec:
             - name: BUDGET_SOURCE
               value: {{ .Values.sources.budget | quote }}
             - name: WATCH_NAMESPACES
-              value: {{ join "," .Values.watchNamespaces | quote }}
+              value: {{ join "," (default (list .Release.Namespace) .Values.watchNamespaces) | quote }}
             {{- if .Values.apiKeys.secretId }}
             # Solo el nombre del secreto: la API lo lee de Secrets Manager con
             # su propia identidad. La llave no pasa por el chart ni por el pipeline.

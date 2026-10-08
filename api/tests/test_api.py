@@ -71,8 +71,8 @@ def test_every_response_says_how_fresh_the_data_is(client, auth):
 def test_list_deployments(client, auth):
     items = client.get("/v1/deployments", headers=auth).json()["data"]
     assert [(d["namespace"], d["name"]) for d in items] == [
-        ("prod", "nelua-api"),
-        ("staging", "nelua-api"),
+        ("nelua-api", "nelua-api"),
+        ("sandbox", "nelua-api"),
     ]
     assert items[0]["version"] == "sample-1a2b3c4"
     assert len(items[0]["pods"]) == 3
@@ -81,14 +81,14 @@ def test_list_deployments(client, auth):
 
 
 def test_list_deployments_filters(client, auth):
-    by_namespace = client.get("/v1/deployments", params={"namespace": "staging"}, headers=auth)
-    assert [d["namespace"] for d in by_namespace.json()["data"]] == ["staging"]
+    by_namespace = client.get("/v1/deployments", params={"namespace": "sandbox"}, headers=auth)
+    assert [d["namespace"] for d in by_namespace.json()["data"]] == ["sandbox"]
 
     by_status = client.get("/v1/deployments", params={"status": "healthy"}, headers=auth)
     assert [d["status"] for d in by_status.json()["data"]] == ["healthy"]
 
     one = client.get(
-        "/v1/deployments", params={"namespace": "prod", "name": "nelua-api"}, headers=auth
+        "/v1/deployments", params={"namespace": "nelua-api", "name": "nelua-api"}, headers=auth
     )
     assert len(one.json()["data"]) == 1
 
@@ -104,8 +104,8 @@ def test_list_deployments_rejects_unknown_status(client, auth):
 
 
 def test_deployment_history_shows_the_rollback(client, auth):
-    prod = client.get("/v1/deployments", params={"namespace": "prod"}, headers=auth)
-    history = prod.json()["data"][0]["history"]
+    api = client.get("/v1/deployments", params={"namespace": "nelua-api"}, headers=auth)
+    history = api.json()["data"][0]["history"]
     assert [r["revision"] for r in history] == [5, 4, 2]  # la más reciente primero
     assert [r["active"] for r in history] == [True, False, False]
     # La activa es una versión anterior que volvió: así se ve un rollback.
@@ -124,15 +124,15 @@ def test_list_alerts(client, auth):
     assert alert["resource"] == {
         "kind": "Pod",
         "name": "nelua-api-7d9f8b6c5-klmno",
-        "namespace": "prod",
+        "namespace": "nelua-api",
     }
     assert "4 veces" in alert["message"]
     assert set(body["meta"]) == {"cluster", "budget"}
 
 
 def test_list_alerts_filters(client, auth):
-    staging = client.get("/v1/alerts", params={"namespace": "staging"}, headers=auth)
-    assert [a["code"] for a in staging.json()["data"]] == ["kubernetes_warning"]
+    sandbox = client.get("/v1/alerts", params={"namespace": "sandbox"}, headers=auth)
+    assert [a["code"] for a in sandbox.json()["data"]] == ["kubernetes_warning"]
 
     critical = client.get("/v1/alerts", params={"severity": "critical"}, headers=auth)
     assert critical.json()["data"] == []
@@ -162,7 +162,7 @@ def test_healthz_reports_version(client):
 
 
 def test_metrics_do_not_explode_with_unknown_paths(client, auth):
-    client.get("/v1/deployments", params={"namespace": "prod"}, headers=auth)
+    client.get("/v1/deployments", params={"namespace": "nelua-api"}, headers=auth)
     client.get("/v1/no-existe/123", headers=auth)
     body = client.get("/metrics").text
     assert 'path="/v1/deployments"' in body

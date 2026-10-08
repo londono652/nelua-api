@@ -20,7 +20,7 @@ from app.sources.sample import SampleBudgetSource, SampleClusterSource
 
 def deployment(status="healthy", ready=3, pods=(), autoscaling=None) -> DeploymentDetail:
     return DeploymentDetail(
-        namespace="prod",
+        namespace="nelua-api",
         name="nelua-api",
         status=status,
         replicas=Replicas(desired=3, ready=ready, updated=3, available=ready),
@@ -123,9 +123,14 @@ def test_nodes_in_a_single_zone_put_high_availability_at_risk():
 def test_kubernetes_warning_events_become_alerts():
     seen = datetime.now(UTC)
     events = [
-        ClusterEvent(namespace="prod", kind="Pod", name="p1", reason="BackOff", message="x"),
+        ClusterEvent(namespace="nelua-api", kind="Pod", name="p1", reason="BackOff", message="x"),
         ClusterEvent(
-            namespace="prod", kind="Pod", name="p1", reason="Unhealthy", message="y", last_seen=seen
+            namespace="nelua-api",
+            kind="Pod",
+            name="p1",
+            reason="Unhealthy",
+            message="y",
+            last_seen=seen,
         ),
     ]
     alerts = cluster_alerts(ClusterState(deployments=[], nodes=THREE_ZONES, events=events), 3, 2)

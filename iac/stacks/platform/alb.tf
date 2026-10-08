@@ -1,5 +1,5 @@
 # El ALB lo crea Terraform (no Kubernetes): así el pipeline de infraestructura
-# es independiente de la aplicación. Los pods se registran en los target groups
+# es independiente de la aplicación. Los pods se registran en el target group
 # mediante un TargetGroupBinding.
 
 data "aws_ssm_parameter" "certificate_arn" {
@@ -12,20 +12,18 @@ data "aws_route53_zone" "main" {
 }
 
 locals {
-  # Dos entornos en el mismo clúster, cada uno con su nombre público.
-  environments = {
-    prod    = "api.${var.domain}"
-    staging = "api-staging.${var.domain}"
-  }
+  # Nombre público del ambiente: api.<dominio> en producción y
+  # api-<ambiente>.<dominio> en los demás.
+  hostname = var.environment == "prod" ? "api.${var.domain}" : "api-${var.environment}.${var.domain}"
 }
 
 resource "aws_security_group" "alb" {
-  name        = "${var.project}-alb"
-  description = "ALB publico de ${var.project}: solo HTTPS"
+  name        = "${local.name}-alb"
+  description = "ALB publico de ${local.name}: solo HTTPS"
   vpc_id      = module.vpc.vpc_id
 
   tags = {
-    Name = "${var.project}-alb"
+    Name = "${local.name}-alb"
   }
 }
 
@@ -59,22 +57,22 @@ resource "aws_vpc_security_group_ingress_rule" "pods_from_alb" {
 
 resource "aws_lb" "api" {
   #checkov:skip=CKV2_AWS_76:Falso positivo. El WAF asociado si incluye AWSManagedRulesKnownBadInputsRuleSet (la que cubre Log4j); checkov no lo detecta por el bloque dynamic de la web ACL.
-  #checkov:skip=CKV_AWS_150:La plataforma es efimera (se destruye con ops-down para no generar costo). En un entorno permanente se activaria la proteccion contra borrado.
   #checkov:skip=CKV_AWS_91:Los access logs a 10.000 RPS generan un volumen y costo altos en S3. La observabilidad se cubre con metricas de Prometheus y CloudWatch; en produccion se activarian con muestreo o retencion corta.
-  name               = var.project
+  name               = local.name
   load_balancer_type = "application"
   internal           = false
   subnets            = module.vpc.public_subnets
   security_groups    = [aws_security_group.alb.id]
 
   drop_invalid_header_fields = true
+
+  # Activa en producción. En staging va apagada para poder destruirlo.
+  enable_deletion_protection = var.alb_deletion_protection
 }
 
 resource "aws_lb_target_group" "api" {
   #checkov:skip=CKV_AWS_378:TLS termina en el ALB. El tramo ALB -> pods viaja dentro de la VPC, en subnets privadas, y un security group solo lo permite desde el ALB. Cifrarlo tambien exigiria certificados en los pods o un service mesh.
-  for_each = local.environments
-
-  name        = "${var.project}-${each.key}"
+  name        = local.name
   vpc_id      = module.vpc.vpc_id
   port        = var.app_port
   protocol    = "HTTP"
@@ -94,7 +92,7 @@ resource "aws_lb_target_group" "api" {
 
   # EKS Auto Mode solo puede registrar pods en target groups de SU clúster.
   tags = {
-    "eks:eks-cluster-name" = var.project
+    "eks:eks-cluster-name" = local.name
   }
 }
 
@@ -140,31 +138,27 @@ resource "aws_lb_listener_rule" "block_metrics" {
   }
 }
 
-# Enruta por nombre: api.nelua.site -> prod, api-staging.nelua.site -> staging.
+# Solo se atienden las peticiones dirigidas al nombre de este ambiente; el resto
+# cae en la respuesta 404 por defecto del listener.
 resource "aws_lb_listener_rule" "api" {
-  for_each = local.environments
-
   listener_arn = aws_lb_listener.https.arn
-  # Prioridades explícitas, siempre después de la regla que bloquea /metrics.
-  priority = 10 + index(keys(local.environments), each.key)
+  priority     = 10
 
   condition {
     host_header {
-      values = [each.value]
+      values = [local.hostname]
     }
   }
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.api[each.key].arn
+    target_group_arn = aws_lb_target_group.api.arn
   }
 }
 
 resource "aws_route53_record" "api" {
-  for_each = local.environments
-
   zone_id = data.aws_route53_zone.main.zone_id
-  name    = each.value
+  name    = local.hostname
   type    = "A"
 
   alias {

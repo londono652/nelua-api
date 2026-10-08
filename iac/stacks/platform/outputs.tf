@@ -1,3 +1,8 @@
+output "environment" {
+  description = "Ambiente de este stack"
+  value       = var.environment
+}
+
 output "cluster_name" {
   description = "Nombre del clúster EKS"
   value       = module.eks.cluster_name
@@ -13,14 +18,14 @@ output "alb_dns_name" {
   value       = aws_lb.api.dns_name
 }
 
-output "urls" {
-  description = "URLs públicas de la API"
-  value       = { for env, host in local.environments : env => "https://${host}" }
+output "url" {
+  description = "URL pública de la API en este ambiente"
+  value       = "https://${local.hostname}"
 }
 
-output "target_group_arns" {
-  description = "Target groups donde se registran los pods"
-  value       = { for env, target_group in aws_lb_target_group.api : env => target_group.arn }
+output "target_group_arn" {
+  description = "Target group donde se registran los pods"
+  value       = aws_lb_target_group.api.arn
 }
 
 output "waf_web_acl_arn" {

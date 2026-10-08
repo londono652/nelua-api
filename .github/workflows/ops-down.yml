@@ -1,10 +1,20 @@
 name: ops-down
 
-# Uso personal (fuera del reto): apaga lo que cuesta por hora.
-# Destruye el stack platform (EKS, nodos, VPC, NAT, ALB, WAF y registros DNS).
-# No toca bootstrap ni persistent: se conservan imágenes, certificado, secretos y estado.
+# Apaga un ambiente: destruye su stack platform (EKS, nodos, VPC, NAT, ALB, WAF
+# y registro DNS). No toca la base compartida: se conservan imágenes,
+# certificado, secretos y estado.
+#
+# Después de usarlo, deja la variable del ambiente (STAGING_ENABLED o
+# PROD_ENABLED) en false para que el pipeline de infra no lo vuelva a crear.
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente a destruir
+        type: choice
+        options: [staging, prod]
+        default: staging
+        required: true
 
 permissions:
   contents: read
@@ -17,10 +27,11 @@ env:
   AWS_REGION: us-east-2
   PROJECT: nelua-api
   TF_IN_AUTOMATION: "true"
+  TARGET_ENVIRONMENT: ${{ inputs.environment }}
 
 jobs:
   destroy:
-    name: Destruir el stack platform
+    name: Destruir ${{ inputs.environment }}
     runs-on: ubuntu-24.04
     environment: infra
     permissions:
@@ -48,16 +59,19 @@ jobs:
       - name: Vaciar el clúster
         continue-on-error: true
         run: |
-          cluster=$(aws ssm get-parameter --name "/$PROJECT/eks/cluster-name" \
+          cluster=$(aws ssm get-parameter --name "/$PROJECT/$TARGET_ENVIRONMENT/eks/cluster-name" \
             --query Parameter.Value --output text)
           aws eks update-kubeconfig --name "$cluster"
-          helm uninstall nelua-api --namespace staging --ignore-not-found --wait
-          helm uninstall nelua-api --namespace prod --ignore-not-found --wait
+          helm uninstall nelua-api --namespace nelua-api --ignore-not-found --wait
           helm uninstall kube-prometheus-stack --namespace monitoring --ignore-not-found --wait
           kubectl delete namespace loadtest --ignore-not-found --wait --timeout=5m
           kubectl delete -f iac/k8s/nodepool.yaml --ignore-not-found --wait --timeout=10m
 
+      # El balanceador de producción está protegido contra borrado: para destruir
+      # ese ambiente hay que apagar antes alb_deletion_protection y aplicar.
       - name: terraform destroy
         run: |
-          terraform -chdir=iac/stacks/platform init -input=false
-          terraform -chdir=iac/stacks/platform destroy -input=false -auto-approve
+          terraform -chdir=iac/stacks/platform init -input=false \
+            -backend-config="envs/$TARGET_ENVIRONMENT.backend.hcl"
+          terraform -chdir=iac/stacks/platform destroy -input=false -auto-approve \
+            -var-file="envs/$TARGET_ENVIRONMENT.tfvars"

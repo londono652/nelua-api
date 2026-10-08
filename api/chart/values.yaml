@@ -8,7 +8,7 @@ image:
 
 containerPort: 8000
 
-# Nombre del entorno que reporta la API (local, staging, prod).
+# Nombre del ambiente que reporta la API (local, staging, prod).
 environment: local
 
 # De dónde lee los datos la API.
@@ -18,8 +18,8 @@ sources:
   cluster: kubernetes
   budget: none
 
-# Namespaces cuyo estado expone la API.
-watchNamespaces: [prod, staging]
+# Namespaces cuyo estado expone la API. Vacío = solo el namespace donde corre.
+watchNamespaces: []
 
 # Autenticación. En AWS se indica el nombre del secreto de Secrets Manager
 # (lo pasa el pipeline, leído de Parameter Store). Vacío para pruebas locales,

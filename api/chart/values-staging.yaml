@@ -1,3 +1,4 @@
+# Staging: mismo chart y misma imagen que producción, con menos réplicas.
 environment: staging
 
 sources:

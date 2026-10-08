@@ -8,8 +8,8 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 ENVIRONMENT="$1"
-connect_cluster
-EXPECTED="${2:-$(deployed_version "$ENVIRONMENT")}"
+connect_cluster "$ENVIRONMENT"
+EXPECTED="${2:-$(deployed_version)}"
 URL="https://$(param "dns/hostname-$ENVIRONMENT")"
 load_api_key "$ENVIRONMENT"
 

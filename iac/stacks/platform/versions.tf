@@ -8,9 +8,10 @@ terraform {
     }
   }
 
+  # Un estado por ambiente. La llave (key) no va aquí: se indica al inicializar,
+  # con -backend-config=envs/<ambiente>.backend.hcl
   backend "s3" {
     bucket       = "nelua-api-tfstate-402365884764"
-    key          = "platform/terraform.tfstate"
     region       = "us-east-2"
     encrypt      = true
     use_lockfile = true
@@ -22,9 +23,10 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project   = var.project
-      Stack     = "platform"
-      ManagedBy = "terraform"
+      Project     = var.project
+      Stack       = "platform"
+      Environment = var.environment
+      ManagedBy   = "terraform"
     }
   }
 }

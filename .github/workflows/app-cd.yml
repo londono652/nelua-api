@@ -5,6 +5,9 @@ name: app · CD
 #
 #   5 · Deploy a staging ──> 6 · Deploy a producción
 #       (rollback automático)    (aprobación + rollback automático)
+#
+# Cada ambiente tiene su propio clúster. La etapa 6 solo corre si producción
+# está encendida (variable PROD_ENABLED).
 on:
   workflow_call:
     inputs:
@@ -73,6 +76,8 @@ jobs:
   deploy-prod:
     name: 6 · Deploy a producción
     needs: deploy-staging
+    # Solo corre si el ambiente de producción está encendido.
+    if: vars.PROD_ENABLED == 'true'
     runs-on: ubuntu-24.04
     # El environment "prod" exige aprobación manual antes de ejecutar este job.
     environment: prod

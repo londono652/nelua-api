@@ -4,7 +4,7 @@ name: infra · Revisión
 # no crea ni modifica nada. Lo llama infra.yml; no se ejecuta solo.
 #
 #   1 · Validación ─┐
-#                   ├─> 3 · Plan
+#                   ├─> 3 · Plan (base compartida, staging y producción)
 #   2 · Seguridad  ─┘
 on:
   workflow_call:
@@ -57,8 +57,10 @@ jobs:
             --config-file iac/.checkov.yaml --compact --quiet
 
   # ───────────────────────── Etapa 3 ─────────────────────────
+  # Se planean los dos ambientes en cada ejecución, aunque producción esté
+  # apagada: así siempre se sabe qué crearía el código si se encendiera.
   plan:
-    name: 3 · Plan (${{ matrix.stack }})
+    name: 3 · Plan (${{ matrix.target }})
     needs: [validate, security]
     runs-on: ubuntu-24.04
     permissions:
@@ -68,7 +70,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        stack: [persistent, platform]
+        include:
+          - target: base compartida
+            dir: iac/stacks/persistent
+            init_args: ""
+            plan_args: ""
+          - target: staging
+            dir: iac/stacks/platform
+            init_args: -backend-config=envs/staging.backend.hcl
+            plan_args: -var-file=envs/staging.tfvars
+          - target: producción
+            dir: iac/stacks/platform
+            init_args: -backend-config=envs/prod.backend.hcl
+            plan_args: -var-file=envs/prod.tfvars
     steps:
       - uses: actions/checkout@v4
 
@@ -84,14 +98,14 @@ jobs:
 
       - name: terraform plan
         run: |
-          terraform -chdir="iac/stacks/${{ matrix.stack }}" init -input=false
-          terraform -chdir="iac/stacks/${{ matrix.stack }}" plan -input=false -no-color | tee plan.txt
+          terraform -chdir="${{ matrix.dir }}" init -input=false ${{ matrix.init_args }}
+          terraform -chdir="${{ matrix.dir }}" plan -input=false -no-color ${{ matrix.plan_args }} | tee plan.txt
 
       - name: Resumen del plan
         run: |
           summary=$(grep -E '^(Plan:|No changes)' plan.txt | tail -1 || true)
           {
-            echo "### Plan del stack \`${{ matrix.stack }}\`"
+            echo "### Plan: ${{ matrix.target }}"
             echo
             echo "**${summary:-Sin resumen}**"
             echo

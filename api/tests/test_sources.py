@@ -20,7 +20,7 @@ IMAGE = "123.dkr.ecr.us-east-2.amazonaws.com/nelua-api"
 DEPLOYMENT = {
     "metadata": {
         "name": "nelua-api",
-        "namespace": "prod",
+        "namespace": "nelua-api",
         "annotations": {"deployment.kubernetes.io/revision": "5"},
     },
     "spec": {
@@ -103,7 +103,7 @@ def replicaset(name, revision, tag, created, replicas=0, ready=0, history=None, 
     return {
         "metadata": {
             "name": name,
-            "namespace": "prod",
+            "namespace": "nelua-api",
             "creationTimestamp": created,
             "annotations": annotations,
             "ownerReferences": [{"kind": "Deployment", "name": owner}] if owner else [],
@@ -166,17 +166,17 @@ async def test_kubernetes_source_reads_only_the_watched_namespaces(token_file):
         return httpx.Response(200, json={"items": [NODE]})
 
     source = KubernetesSource(
-        "https://kubernetes.test", token_file, "", ("prod",), httpx.MockTransport(handler)
+        "https://kubernetes.test", token_file, "", ("nelua-api",), httpx.MockTransport(handler)
     )
     state = await source.collect()
     await source.close()
 
     assert requested == [
-        "/apis/apps/v1/namespaces/prod/deployments",
-        "/api/v1/namespaces/prod/pods",
-        "/apis/autoscaling/v2/namespaces/prod/horizontalpodautoscalers",
-        "/apis/apps/v1/namespaces/prod/replicasets",
-        "/api/v1/namespaces/prod/events",
+        "/apis/apps/v1/namespaces/nelua-api/deployments",
+        "/api/v1/namespaces/nelua-api/pods",
+        "/apis/autoscaling/v2/namespaces/nelua-api/horizontalpodautoscalers",
+        "/apis/apps/v1/namespaces/nelua-api/replicasets",
+        "/api/v1/namespaces/nelua-api/events",
         "/api/v1/nodes",
     ]
 
@@ -215,21 +215,21 @@ def test_parse_events_keeps_recent_ones_and_deduplicates():
             warning_event("pod-a", "Unhealthy", 5),
             warning_event("pod-b", "FailedScheduling", 90),  # fuera de la ventana
         ],
-        "prod",
+        "nelua-api",
         not_before,
     )
     assert sorted((e.name, e.reason, e.message) for e in events) == [
         ("pod-a", "BackOff", "nuevo"),
         ("pod-a", "Unhealthy", "detalle"),
     ]
-    assert events[0].namespace == "prod"
+    assert events[0].namespace == "nelua-api"
 
 
 async def test_kubernetes_source_propagates_api_errors(token_file):
     transport = httpx.MockTransport(
         lambda request: httpx.Response(403, json={"message": "forbidden"})
     )
-    source = KubernetesSource("https://kubernetes.test", token_file, "", ("prod",), transport)
+    source = KubernetesSource("https://kubernetes.test", token_file, "", ("nelua-api",), transport)
     with pytest.raises(httpx.HTTPStatusError):
         await source.collect()
     await source.close()

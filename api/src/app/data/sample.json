@@ -2,7 +2,7 @@
   "cluster": {
     "deployments": [
       {
-        "namespace": "prod",
+        "namespace": "nelua-api",
         "name": "nelua-api",
         "status": "healthy",
         "replicas": {
@@ -50,7 +50,7 @@
         ]
       },
       {
-        "namespace": "staging",
+        "namespace": "sandbox",
         "name": "nelua-api",
         "status": "progressing",
         "replicas": {
@@ -127,7 +127,7 @@
     ],
     "revisions": [
       {
-        "namespace": "prod",
+        "namespace": "nelua-api",
         "deployment": "nelua-api",
         "revision": 5,
         "version": "sample-1a2b3c4",
@@ -141,7 +141,7 @@
         }
       },
       {
-        "namespace": "prod",
+        "namespace": "nelua-api",
         "deployment": "nelua-api",
         "revision": 4,
         "version": "sample-9d8c7b6",
@@ -155,7 +155,7 @@
         }
       },
       {
-        "namespace": "prod",
+        "namespace": "nelua-api",
         "deployment": "nelua-api",
         "revision": 2,
         "version": "sample-0f1e2d3",
@@ -169,7 +169,7 @@
         }
       },
       {
-        "namespace": "staging",
+        "namespace": "sandbox",
         "deployment": "nelua-api",
         "revision": 7,
         "version": "sample-5e6f7a8",
@@ -183,7 +183,7 @@
         }
       },
       {
-        "namespace": "staging",
+        "namespace": "sandbox",
         "deployment": "nelua-api",
         "revision": 6,
         "version": "sample-9d8c7b6",
@@ -199,7 +199,7 @@
     ],
     "events": [
       {
-        "namespace": "staging",
+        "namespace": "sandbox",
         "kind": "Pod",
         "name": "nelua-api-5c4d3e2f1-uvwxy",
         "reason": "FailedScheduling",

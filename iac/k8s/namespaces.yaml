@@ -1,10 +1,6 @@
-# Dos entornos en el mismo clúster, aislados por namespace.
+# Namespace de la aplicación. Se llama igual en todos los ambientes: cada
+# ambiente tiene su propio clúster, así que los manifiestos son idénticos.
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: staging
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: prod
+  name: nelua-api
