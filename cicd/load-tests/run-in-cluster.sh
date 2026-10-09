@@ -2,6 +2,9 @@
 # Lanza la prueba de carga de 10.000 RPS desde dentro del clúster de un ambiente.
 #   uso: bash cicd/load-tests/run-in-cluster.sh [staging|prod]   (por defecto, staging)
 #
+# Versión corta, para mostrar que el HPA escala y se llega a 10.000 RPS:
+#   RAMP=1m HOLD=3m bash cicd/load-tests/run-in-cluster.sh staging    (~7 minutos)
+#
 # En staging, primero le sube el autoescalado a los valores de producción
 # (api/chart/values-loadtest.yaml), para medir la misma capacidad sin tener que
 # encender producción.
@@ -16,6 +19,8 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$DIR/../scripts/lib.sh"
 
 ENVIRONMENT="${1:-staging}"
+RAMP="${RAMP:-2m}"
+HOLD="${HOLD:-5m}"
 URL="https://$(param "dns/hostname-$ENVIRONMENT")"
 
 connect_cluster "$ENVIRONMENT"
@@ -39,10 +44,10 @@ kubectl create secret generic k6-auth --namespace loadtest \
 
 # Un Job no se puede modificar: se borra el anterior antes de lanzar otro.
 kubectl delete job k6-load --namespace loadtest --ignore-not-found --wait
-sed "s|__BASE_URL__|$URL|" "$DIR/k6-job.yaml" | kubectl apply -f -
+sed -e "s|__BASE_URL__|$URL|" -e "s|__RAMP__|$RAMP|" -e "s|__HOLD__|$HOLD|" "$DIR/k6-job.yaml" | kubectl apply -f -
 
 echo
-echo "Prueba lanzada contra $URL. Para seguirla:"
+echo "Prueba lanzada contra $URL (rampa de 3 x $RAMP, $HOLD sostenida). Para seguirla:"
 echo "  kubectl get pods -n loadtest -w"
 echo "  kubectl get hpa,pods -n $NAMESPACE -w"
 echo "  kubectl logs -n loadtest -l app=k6-load -f --max-log-requests 4"

@@ -14,7 +14,7 @@ alb_deletion_protection = false
 dynamodb_deletion_protection = false
 
 # Se pone en true solo mientras corre la prueba de carga desde dentro del clúster.
-load_test_mode = true
+load_test_mode = false
 
 # Staging usa API key: es el ambiente donde se prueba y se corre la prueba de
 # carga. Producción usa Cognito (JWT validado en el ALB), el valor por defecto.

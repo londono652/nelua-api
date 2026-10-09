@@ -227,9 +227,11 @@ Lo que queda pendiente:
 - El secreto de cada cliente lo genera Cognito y Terraform lo guarda en su
   estado, que está en un bucket cifrado y privado. Si eso no fuera aceptable, los
   clientes se crearían fuera de Terraform.
-- El WAF sigue limitando por IP. Limitar por consumidor exigiría leer el
-  `client_id` del token, y el WAF no decodifica JWT; la alternativa sería API
-  Gateway con planes de uso, delante del ALB.
+- El WAF sigue limitando por IP. Puede contar por un encabezado en lugar de por
+  IP (*custom keys*), pero con JWT el encabezado `Authorization` cambia cada hora,
+  así que la cuota sería por token y no exactamente por cliente: el WAF no
+  decodifica el token para leer el `client_id`. Una cuota exacta por cliente
+  pediría API Gateway con planes de uso delante del ALB.
 - Si se suma un consumidor humano (un tablero web), el mismo pool sirve con el
   flujo de código de autorización.
 
@@ -286,13 +288,23 @@ son parámetros de operación:
 | Impredecible | Mantener un mínimo de réplicas más alto todo el tiempo | `api/chart/values-prod.yaml` |
 | Sostenido muchas horas al día | Pasar parte de los nodos de Spot a On-Demand con descuento por compromiso, y revisar el costo del WAF por petición | Pool de nodos y estimación de costo |
 
-Hay otro supuesto en el WAF. El límite es de 2.000 peticiones por IP cada 5
-minutos, que protege contra abuso desde una sola dirección y da por hecho que los
-10.000 RPS vienen de muchos clientes. Si vinieran de pocos consumidores internos
-detrás de las mismas IP, ese límite los bloquearía. Por eso es una variable
-(`waf_rate_limit`) y la prueba de carga exime a sus generadores con
-`load_test_mode`. En producción limitaría por consumidor y no por IP, para que cada
-uno tenga su cuota sin importar desde dónde llama.
+Hay otro supuesto en el WAF. La API está abierta a cualquier IP: lo que protege
+los datos es la credencial, no la dirección. El WAF solo agrega un límite contra
+abuso de 2.000 peticiones por IP cada 5 minutos, que da por hecho que los 10.000
+RPS vienen de muchos clientes. Si vinieran de pocos consumidores internos detrás
+de las mismas IP, ese límite los bloquearía. Hay tres salidas, ninguna es
+registrar IP por IP:
+
+- Contar por consumidor en vez de por IP: las reglas de límite del WAF admiten
+  *custom keys*, y con el encabezado `X-API-Key` como llave cada consumidor tiene
+  su cuota sin importar desde dónde llama.
+- Eximir los rangos de salida conocidos (CIDR, por ejemplo la red de la oficina)
+  con un IP set.
+- Subir el umbral (`waf_rate_limit`).
+
+La prueba de carga usa la segunda: con `load_test_mode` se eximen las IP del NAT,
+porque los generadores corren en el clúster y salen todos por la misma dirección.
+Es temporal; al terminar la prueba se apaga.
 
 ### Staging y producción
 
@@ -335,7 +347,7 @@ Y hay cosas que dejaría distintas en producción y que no implementé:
 | Access logs del ALB | Desactivados | Activos, con retención corta o muestreo |
 | Endpoint del clúster | Público, protegido por IAM | Restringido a rangos conocidos, o privado |
 | Permisos del pipeline de IaC | `AdministratorAccess`, limitado por la confianza OIDC y la aprobación manual | Un *permission boundary* y un rol de solo lectura para el plan |
-| Límite del WAF | Por IP | Por consumidor (API Gateway con planes de uso delante del ALB) |
+| Límite del WAF | Por IP | Por consumidor: *custom key* sobre `X-API-Key` en el WAF, o API Gateway con planes de uso si hace falta una cuota exacta por cliente de Cognito |
 | Alertas | Por umbral, en CloudWatch | Por consumo del presupuesto de error |
 | Cifrado | Llaves administradas por AWS | Llaves KMS propias donde haya requisito de cumplimiento |
 
