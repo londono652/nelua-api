@@ -1,6 +1,6 @@
 # Uso de IA en el reto
 
-Trabajé todo el reto con un asistente de IA (Claude). Aquí cuento cómo lo usé, qué
+Trabajé con un asistente de IA (Claude). Aquí cuento cómo lo usé, qué
 decidí yo y en qué se equivocó.
 
 ## Para qué lo usé
@@ -10,42 +10,32 @@ Lo usé sobre todo para cuatro cosas.
 La primera fue discutir la arquitectura. Le pedí una propuesta y después la fui
 cuestionando punto por punto, hasta quedarme con lo que yo podía explicar.
 
-La segunda fue escribir. El código de la API, las pruebas, el chart y Terraform
-los escribió la IA. Yo corrí cada entrega en mi máquina y en los pipelines antes
+La segunda fue para escribir  el código de la API, las pruebas, el chart y Terraform. Yo corrí valide cada entrega en mi máquina y en los pipelines antes
 de darla por buena.
 
-La tercera, depurar. Le pegaba la salida real del error, ya fuera de un pipeline,
+La tercera, depurar. Le pegaba la salida real de los errores, ya fuera de un pipeline,
 de un `docker run` o de un `terraform plan`, y trabajábamos sobre eso.
 
 Y la cuarta, preparar la sustentación: qué me podían preguntar y cómo responderlo.
 
-## Algunos prompts
+## Algunos prompts 
 
-Así arranqué:
-
-> "Supón que eres un arquitecto DevOps que quiere desplegar una API en Python, con
+> "Actua como un arquitecto DevOps que quiere desplegar una API en Python, con
 > un flujo de CI/CD usando GitHub Actions, Terraform y AWS. Quieres hacer todo
-> funcional (la API, el pipeline y la IaC) cumpliendo a cabalidad cada punto.
+> funcional (la API, el pipeline y la IaC) cumpliendo a cabalidad cada objetivo.
 > ¿Cómo lo elaborarías de forma que se pueda explicar fácilmente, qué arquitectura
 > elegirías y cómo separarías el flujo de CI/CD de la IaC?"
 
 Para revisar lo que me había propuesto:
 
-> "Analiza si está bien la arquitectura propuesta para este reto y, si hay algo por
-> cambiar y mejorar, proponlo. La idea es algo simple para poder sustentarlo sin
-> complicarme."
+> "Analiza mi arquitectura propuesta  si hay algo por
+> cambiar y mejorar, proponlo. simplifica tus respuestas"
 
-Sobre qué debía exponer la API:
-
-> "¿No podríamos hacer algo más sencillo, por ejemplo que obtenga el estado del
-> presupuesto de AWS y el estado de los deployments del mismo EKS? No me suena
-> obtener información y meterle data dummy; ahí mismo dice que es para un equipo
-> de infra."
 
 Más adelante cambié el enfoque de la API. Sentía que leer solo el clúster se
 quedaba corto para el reto de los 10.000 RPS, porque no había nada que cachear:
 
-> "Voy a cambiar el enfoque de la API: últimos deploys en GitHub de mi repo, tasa
+> "cambiar el enfoque de la API: últimos deploys en GitHub de mi repo, tasa
 > de éxito de los deploys y estado de los deployments por namespace. Todos van
 > contra fuentes externas. ¿Cómo lo modelamos para consumir esas APIs y exponer la
 > información, pero guardando y cacheando para soportar los 10k que piden?"
@@ -56,8 +46,7 @@ Y sobre el pipeline:
 
 > "El rollback sí debe estar como paso en el pipeline y mostrar bien la estrategia."
 >
-> "Quisiera que los pipelines los agrupes por etapas de CI/CD; el requerimiento pide
-> etapas bien definidas."
+> "Quisiera que los pipelines los agrupes por etapas de CI/CD bien definidas."
 
 ## Dónde tuve que corregirla
 

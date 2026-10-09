@@ -10,8 +10,6 @@ consulta en cada petición. Un recolector las lee cada pocos segundos, guarda el
 historial y una foto ya calculada en DynamoDB, y los pods de la API responden
 desde memoria.
 
-Es mi solución al reto técnico *DevOps & Platform Engineering*. La API, la
-infraestructura en AWS y los pipelines funcionan.
 
 | Carpeta | Qué hay |
 |---|---|
@@ -91,7 +89,7 @@ En resumen:
   límite por IP y reglas administradas. Los pods no tienen IP pública.
 - Hay tres zonas y, en producción, mínimo tres réplicas repartidas entre ellas.
   Los despliegues no tumban el servicio.
-- La API no tiene estado y responde desde memoria. Para llegar a 10.000 RPS
+- La API responde desde memoria para llegar a 10.000 RPS
   escalan los pods (HPA) y los nodos (EKS Auto Mode). La carga sobre las fuentes
   y DynamoDB no crece con el tráfico: GitHub, Kubernetes y AWS Budgets los
   consulta solo el recolector, y cada pod lee DynamoDB una vez cada 5 segundos.
