@@ -4,6 +4,10 @@
 # Todo lo que necesitan de la infraestructura lo leen de Parameter Store:
 # los scripts no conocen ARNs, nombres de clúster ni dominios.
 
+# Si un comando falla, dice cuál y en qué línea (con set -e el script se detendría
+# sin explicación).
+trap 'echo "ERROR: falló \"$BASH_COMMAND\" (${BASH_SOURCE[0]}:${LINENO})" >&2' ERR
+
 PROJECT="${PROJECT:-nelua-api}"
 RELEASE="nelua-api"
 # El namespace es el mismo en todos los ambientes: cada uno tiene su clúster.
@@ -21,13 +25,16 @@ connect_cluster() {
 }
 
 # Revisión de Helm que está desplegada ahora (vacío si aún no hay ninguna).
+# En el primer despliegue el release no existe y helm falla: eso no es un error.
 current_revision() {
-  helm status "$RELEASE" --namespace "$NAMESPACE" --output json 2>/dev/null | jq -r '.version // empty'
+  { helm status "$RELEASE" --namespace "$NAMESPACE" --output json 2>/dev/null || true; } |
+    jq -r '.version // empty'
 }
 
 # Versión (tag de imagen) que Helm tiene registrada como desplegada.
 deployed_version() {
-  helm get values "$RELEASE" --namespace "$NAMESPACE" --all --output json | jq -r '.image.tag'
+  { helm get values "$RELEASE" --namespace "$NAMESPACE" --all --output json 2>/dev/null || true; } |
+    jq -r '.image.tag // empty'
 }
 
 # Cómo se autentican los clientes en el ambiente: "api_key" o "jwt" (Cognito).
