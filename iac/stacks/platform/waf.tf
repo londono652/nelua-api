@@ -10,13 +10,22 @@ locals {
   load_test_enabled = var.load_test_mode || length(var.load_test_cidrs) > 0
 }
 
+# El IP set existe siempre (vacío fuera de la prueba) y lo que se activa o
+# desactiva es la regla que lo usa. Si el IP set se creara y borrara con el
+# modo, al apagarlo Terraform intentaría borrarlo mientras la web ACL todavía
+# lo referencia, y AWS lo rechaza (WAFAssociatedItemException).
 resource "aws_wafv2_ip_set" "load_test" {
-  count = local.load_test_enabled ? 1 : 0
-
   name               = "${local.name}-load-test"
   scope              = "REGIONAL"
   ip_address_version = "IPV4"
   addresses          = local.load_test_addresses
+}
+
+# Antes el IP set se creaba con count; esto evita que Terraform lo destruya y
+# lo recree al cambiar de dirección en el estado.
+moved {
+  from = aws_wafv2_ip_set.load_test[0]
+  to   = aws_wafv2_ip_set.load_test
 }
 
 resource "aws_wafv2_web_acl" "api" {
@@ -30,7 +39,7 @@ resource "aws_wafv2_web_acl" "api" {
 
   # Excepción temporal para el generador de la prueba de carga.
   dynamic "rule" {
-    for_each = aws_wafv2_ip_set.load_test
+    for_each = local.load_test_enabled ? [aws_wafv2_ip_set.load_test] : []
 
     content {
       name     = "allow-load-test"
