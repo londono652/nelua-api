@@ -47,8 +47,15 @@ fi
 
 # El repo que se verifica es el primero de la lista monitoreada en el chart.
 REPO=$(helm get values "$RELEASE" --namespace "$NAMESPACE" --all --output json | jq -r '.githubRepos[0]')
+# Un 503 significa "aún no hay datos": justo después de un primer despliegue el
+# recolector puede no haber terminado su primera vuelta. Se reintenta un minuto.
 for path in /v1/repos "/v1/repos/$REPO/deploys" "/v1/repos/$REPO/deploys/stats" /v1/deployments /v1/budget; do
-  status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "$AUTH_HEADER" "$URL$path")
+  for attempt in $(seq 1 12); do
+    status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H "$AUTH_HEADER" "$URL$path")
+    [ "$status" = "503" ] || break
+    echo "  $path -> 503 (sin datos todavía, intento $attempt), esperando..."
+    sleep 5
+  done
   echo "  $path -> $status"
   if [ "$status" != "200" ]; then
     echo "ERROR: $path respondió $status" >&2

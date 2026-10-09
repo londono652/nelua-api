@@ -26,6 +26,8 @@ from app.reader import SnapshotReader
 from app.store import DynamoStore, Store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+# Cada petición de httpx se registra en INFO; con consultas cada 15 s llenan el log.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 REQUESTS = Counter("http_requests_total", "Total de peticiones HTTP", ["method", "path", "status"])
 LATENCY = Histogram(

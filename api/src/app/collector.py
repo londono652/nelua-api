@@ -340,6 +340,8 @@ def build(settings: Settings) -> Collector:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    # Cada petición de httpx se registra en INFO; con consultas cada 15 s llenan el log.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     settings = load_settings()
     logger.info(
         "Recolector iniciado: repos=%s namespaces=%s",
