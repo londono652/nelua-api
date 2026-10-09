@@ -7,3 +7,6 @@ autoscaling:
 
 nodeSelector:
   kubernetes.io/arch: arm64
+
+githubRepos:
+  - londono652/nelua-apii
