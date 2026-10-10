@@ -130,3 +130,19 @@ def test_tracing_is_off_without_an_endpoint(monkeypatch, settings):
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel:4318")
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")
     assert tracing.enabled() is False
+
+
+class UnreadableStore(MemoryStore):
+    async def get_snapshots(self, names):
+        raise RuntimeError("AccessDeniedException: dynamodb:BatchGetItem")
+
+
+async def test_reading_the_last_state_at_startup_has_its_own_trace(settings, spans):
+    collector = Collector(settings, UnreadableStore(), SampleClusterSource(), OneRepoFails())
+
+    await collector.restore_sync_status()
+
+    [span] = by_name(spans, "restore sync status")
+    assert span.parent is None
+    assert span.status.status_code is StatusCode.ERROR
+    assert "AccessDeniedException" in span.status.description

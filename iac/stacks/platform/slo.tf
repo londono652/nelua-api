@@ -162,19 +162,35 @@ resource "aws_cloudwatch_composite_alarm" "slo_page" {
 
 # ---------- Tablero ----------
 #
-# Por cada SLI: cumplimiento en 30 días, presupuesto restante y la serie de
-# eventos malos por hora con las líneas de las alarmas.
+# Por cada SLI: cumplimiento y presupuesto restante en el periodo que se esté
+# mirando (al abrirlo, 30 días) y la serie de eventos malos por hora con las
+# líneas de las alarmas.
 locals {
+  # El percentil de TargetResponseTime hereda la unidad de la métrica (segundos)
+  # y el tablero mostraría "1,7 min" en vez de 100 %. Sumarle 0 veces una métrica
+  # de conteo deja el resultado sin esa unidad. Solo en el tablero: las alarmas
+  # comparan números y no les afecta.
+  dashboard_extra_metrics = {
+    availability = []
+    latency = [
+      { id = "lreq", namespace = "AWS/ApplicationELB", metric = "RequestCount", stat = "Sum", dims = { LoadBalancer = aws_lb.api.arn_suffix } },
+    ]
+    freshness = []
+  }
+  dashboard_bad_expression = merge(local.sli_bad_expression, {
+    latency = "100 - fast + 0 * FILL(lreq, 0)"
+  })
+
   dashboard_metrics = {
     for sli, metrics in local.sli_metrics : sli => concat(
       [
-        for m in metrics : concat(
+        for m in concat(metrics, local.dashboard_extra_metrics[sli]) : concat(
           [m.namespace, m.metric],
           flatten([for k, v in m.dims : [k, v]]),
           [{ id = m.id, stat = m.stat, visible = false }]
         )
       ],
-      [[{ id = "bad", expression = local.sli_bad_expression[sli], visible = false }]]
+      [[{ id = "bad", expression = local.dashboard_bad_expression[sli], visible = false }]]
     )
   }
 
@@ -195,7 +211,7 @@ locals {
         width  = 8
         height = 4
         properties = {
-          title                = "${local.slo_titles[sli]}: SLI 30 días (SLO ${100 - local.slo_budget[sli]} %)"
+          title                = "${local.slo_titles[sli]}: SLI en el periodo del tablero (SLO ${100 - local.slo_budget[sli]} %)"
           view                 = "singleValue"
           region               = var.region
           period               = 2592000
@@ -210,7 +226,7 @@ locals {
         width  = 8
         height = 4
         properties = {
-          title                = "${local.slo_titles[sli]}: presupuesto de error restante"
+          title                = "${local.slo_titles[sli]}: presupuesto de error restante (negativo = gastado de más)"
           view                 = "singleValue"
           region               = var.region
           period               = 2592000
@@ -237,7 +253,7 @@ locals {
               { label = "Page rápida (14,4x)", value = 14.4 * local.slo_budget[sli] },
             ]
           }
-          yAxis = { left = { min = 0 } }
+          yAxis = { left = { min = 0, label = "% de eventos malos", showUnits = false } }
         }
       },
     ]

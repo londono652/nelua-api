@@ -231,11 +231,19 @@ class Collector:
             BUDGET_SNAPSHOT,
             *(deploys_snapshot_name(r) for r in self._settings.github_repos),
         }
-        try:
-            previous = await self._store.get_snapshots([SYNC_SNAPSHOT])
-        except Exception:
-            logger.exception("No se pudo leer el estado anterior de la sincronización")
-            return
+        with tracer.start_as_current_span(
+            "restore sync status",
+            context=trace.set_span_in_context(trace.INVALID_SPAN),
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                previous = await self._store.get_snapshots([SYNC_SNAPSHOT])
+            except Exception as exc:
+                logger.exception("No se pudo leer el estado anterior de la sincronización")
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, describe_error(exc)))
+                return
         if SYNC_SNAPSHOT in previous:
             # Solo las vistas que siguen configuradas (un repo retirado se olvida).
             self.sync_status = {

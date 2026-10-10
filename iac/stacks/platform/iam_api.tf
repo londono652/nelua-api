@@ -74,6 +74,8 @@ data "aws_iam_policy_document" "collector_permissions" {
       "dynamodb:PutItem",
       "dynamodb:BatchWriteItem",
       "dynamodb:DescribeTable",
+      # Al arrancar lee el estado de la última sincronización (restore_sync_status).
+      "dynamodb:BatchGetItem",
     ]
     resources = [aws_dynamodb_table.api.arn]
   }
