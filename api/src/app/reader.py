@@ -9,10 +9,13 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from opentelemetry import trace
+
 from app.collector import BUDGET_SNAPSHOT, SYNC_SNAPSHOT, deploys_snapshot_name
 from app.store import Snapshot, Store
 
 logger = logging.getLogger("nelua.reader")
+tracer = trace.get_tracer("nelua.reader")
 
 # Una foto se considera desactualizada si lleva más de 3 ciclos sin renovarse.
 STALE_AFTER_CYCLES = 3
@@ -76,7 +79,9 @@ class SnapshotReader:
         return meta(self._snapshots.get(name), self.sync(name))
 
     async def refresh(self) -> None:
-        snapshots = await self._store.get_snapshots(self.names)
+        with tracer.start_as_current_span("refresh snapshots") as span:
+            snapshots = await self._store.get_snapshots(self.names)
+            span.set_attribute("nelua.snapshots", len(snapshots))
         # Si una foto no vino (todavía no existe) se conserva la anterior.
         self._snapshots = {**self._snapshots, **snapshots}
         self.loaded = True

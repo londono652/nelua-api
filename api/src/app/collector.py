@@ -20,14 +20,21 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from app.config import Settings, load_settings
 from app.deploys import WINDOWS, all_stats, latest
 from app.models import ClusterState, Deploy
 from app.sources.base import BudgetSource, ClusterSource, DeploySource
 from app.store import DynamoStore, Store
+from app.tracing import configure_logging, setup_tracing
 
 logger = logging.getLogger("nelua.collector")
+# Cada ciclo de sincronización es una traza: "sync <fuente>" con un span por
+# vista ("collect <vista>") y, dentro, las llamadas a la fuente, a DynamoDB y a
+# CloudWatch que agregan las instrumentaciones de httpx y boto3.
+tracer = trace.get_tracer("nelua.collector")
 
 
 def cluster_views(state: ClusterState) -> list[dict]:
@@ -129,15 +136,21 @@ class Collector:
         """Ejecuta una recolección y anota cómo le fue, sin dejar escapar el error."""
         attempted_at = datetime.now(UTC).isoformat()
         error = None
-        try:
-            await collect()
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            # La foto anterior sigue en DynamoDB; la API la sigue sirviendo,
-            # marcada como desactualizada, y dice por qué en meta.sync.
-            logger.exception("Falló la recolección de %s", view)
-            error = describe_error(exc)
+        with tracer.start_as_current_span(
+            f"collect {view}", record_exception=False, set_status_on_exception=False
+        ) as span:
+            span.set_attribute("nelua.view", view)
+            try:
+                await collect()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # La foto anterior sigue en DynamoDB; la API la sigue sirviendo,
+                # marcada como desactualizada, y dice por qué en meta.sync.
+                logger.exception("Falló la recolección de %s", view)
+                error = describe_error(exc)
+                span.record_exception(exc)
+                span.set_status(Status(StatusCode.ERROR, error))
         previous = self.sync_status.get(view, {})
         self.sync_status[view] = {
             "last_attempt_at": attempted_at,
@@ -163,22 +176,40 @@ class Collector:
             except Exception:
                 logger.exception("No se pudo publicar la métrica de sincronización")
 
+    async def _cycle(self, source: str, attempts: Callable[[], Awaitable[list[bool]]]) -> None:
+        """Un ciclo de sincronización de una fuente: una traza, sin padre."""
+        with tracer.start_as_current_span(
+            f"sync {source}", context=trace.set_span_in_context(trace.INVALID_SPAN)
+        ) as span:
+            span.set_attribute("nelua.source", source)
+            ok = all(await attempts())
+            span.set_attribute("nelua.sync.ok", ok)
+            if not ok:
+                span.set_status(Status(StatusCode.ERROR, "Alguna vista no se pudo actualizar"))
+            await self._report(source, ok)
+
     async def sync_cluster(self) -> None:
-        ok = await self._attempt("cluster", self.collect_cluster)
-        await self._report("cluster", ok)
+        async def attempts() -> list[bool]:
+            return [await self._attempt("cluster", self.collect_cluster)]
+
+        await self._cycle("cluster", attempts)
 
     async def sync_deploys(self) -> None:
         # Cada repo por separado: si uno falla (por ejemplo, lo renombraron),
         # los demás se siguen actualizando.
-        results = [
-            await self._attempt(deploys_snapshot_name(repo), partial(self.collect_repo, repo))
-            for repo in self._settings.github_repos
-        ]
-        await self._report("github", all(results))
+        async def attempts() -> list[bool]:
+            return [
+                await self._attempt(deploys_snapshot_name(repo), partial(self.collect_repo, repo))
+                for repo in self._settings.github_repos
+            ]
+
+        await self._cycle("github", attempts)
 
     async def sync_budget(self) -> None:
-        ok = await self._attempt(BUDGET_SNAPSHOT, self.collect_budget)
-        await self._report("budget", ok)
+        async def attempts() -> list[bool]:
+            return [await self._attempt(BUDGET_SNAPSHOT, self.collect_budget)]
+
+        await self._cycle("budget", attempts)
 
     def _beat(self) -> None:
         # La liveness probe del recolector revisa que este archivo se actualice.
@@ -339,10 +370,10 @@ def build(settings: Settings) -> Collector:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    # Cada petición de httpx se registra en INFO; con consultas cada 15 s llenan el log.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    configure_logging()
     settings = load_settings()
+    # Antes de build(): los clientes de httpx y boto3 se crean ya instrumentados.
+    setup_tracing(settings, "nelua-api-collector")
     logger.info(
         "Recolector iniciado: repos=%s namespaces=%s",
         ",".join(settings.github_repos),

@@ -3,3 +3,10 @@ uvicorn[standard]==0.54.0
 httpx==0.28.1
 boto3==1.43.108
 prometheus-client==0.26.0
+# Trazas distribuidas (app/tracing.py). Las instrumentaciones van en la versión
+# 0.x que corresponde a cada 1.x del SDK.
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-instrumentation-fastapi==0.66b1
+opentelemetry-instrumentation-httpx==0.66b1
+opentelemetry-instrumentation-botocore==0.66b1

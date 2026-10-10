@@ -85,6 +85,9 @@ sensibles en el código.
 | `GITHUB_REFRESH_SECONDS` | recolector | Cada cuánto consulta GitHub | `60` |
 | `CREATE_TABLE` | recolector | Crea la tabla si no existe (solo local) | `false` |
 | `METRICS_NAMESPACE` | recolector | Namespace de CloudWatch para la métrica `SyncSuccess` (vacío: no publica) | (ninguno) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | los dos | Colector de trazas (OTLP/HTTP). Vacío: trazas apagadas | (ninguno) |
+| `OTEL_SERVICE_NAME` | los dos | Nombre del servicio en las trazas | `nelua-api` / `nelua-api-collector` |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | los dos | Muestreo de trazas (estándar de OpenTelemetry) | guarda todas |
 
 ## 2. Despliegue en AWS
 
@@ -228,5 +231,6 @@ Para agregar un consumidor, se suma su nombre a `api_consumers` en
 | Rotar el token de GitHub | `put-secret-value` con el nuevo y reiniciar el recolector |
 | Rotar la API key | Subir `api_key_version` en `iac/stacks/persistent` y aplicar. La API la recarga en 5 minutos sin redesplegar |
 | Ver métricas | `kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80` |
+| Ver trazas | Consola de AWS → CloudWatch → X-Ray traces (servicios `nelua-api` y `nelua-api-collector`) |
 | Prueba de carga | `bash cicd/load-tests/run-in-cluster.sh staging`, con `load_test_mode = true` en `envs/staging.tfvars` |
 | Apagar un ambiente | Workflow **ops-down**, eligiendo el ambiente, y su variable en `false` |

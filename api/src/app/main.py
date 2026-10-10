@@ -6,7 +6,6 @@ esa carga a GitHub, a Kubernetes ni a la base de datos.
 """
 
 import asyncio
-import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -24,10 +23,10 @@ from app.errors import ApiError, register_error_handlers
 from app.models import BudgetList, DeployList, DeploymentList, DeployStatsList, Problem
 from app.reader import SnapshotReader
 from app.store import DynamoStore, Store
+from app.tracing import active as tracing_active
+from app.tracing import configure_logging, instrument_app
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-# Cada petición de httpx se registra en INFO; con consultas cada 15 s llenan el log.
-logging.getLogger("httpx").setLevel(logging.WARNING)
+configure_logging()
 
 REQUESTS = Counter("http_requests_total", "Total de peticiones HTTP", ["method", "path", "status"])
 LATENCY = Histogram(
@@ -84,6 +83,8 @@ def create_app(settings: Settings | None = None, store: Store | None = None) -> 
     app.state.api_keys = api_keys
     app.state.reader = reader
     register_error_handlers(app)
+    if tracing_active():
+        instrument_app(app)
 
     @app.middleware("http")
     async def record_metrics(request: Request, call_next):

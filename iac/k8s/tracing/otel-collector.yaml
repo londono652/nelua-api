@@ -1,0 +1,176 @@
+# Colector de trazas: recibe los spans de la API y del recolector por OTLP y los
+# manda a AWS X-Ray.
+#
+# Va aparte de la aplicación para que ella no conozca el destino: la app solo
+# sabe "manda OTLP a otel-collector.monitoring". Cambiar X-Ray por Tempo,
+# Jaeger o un proveedor externo es cambiar este archivo, no el código.
+#
+# Si este colector se cae, la app descarta las trazas y sigue atendiendo: el
+# envío es en lote y en segundo plano.
+#
+# Plantilla: iac/scripts/apply-k8s.sh reemplaza ${AWS_REGION} y ${CONFIG_HASH}.
+# Permisos de AWS: rol con AWSXRayDaemonWriteAccess por Pod Identity
+# (iac/stacks/platform/iam_tracing.tf).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  # Nombre fijo: lo referencia la asociación de Pod Identity.
+  name: otel-collector
+  namespace: monitoring
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector
+  namespace: monitoring
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      # Si llegan más trazas de las que puede enviar, las descarta antes de
+      # quedarse sin memoria (y antes de que Kubernetes lo reinicie).
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      batch:
+        timeout: 5s
+        send_batch_size: 512
+
+    exporters:
+      awsxray:
+        region: ${env:AWS_REGION}
+        # Atributos por los que se puede filtrar en la consola de X-Ray.
+        indexed_attributes:
+          - nelua.source
+          - nelua.view
+          - nelua.sync.ok
+          - http.route
+          - aws.alb.trace_id
+
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [awsxray]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: otel-collector
+spec:
+  # Dos réplicas en zonas distintas: el muestreo se decide en la app (por
+  # traza, al inicio), así que cualquier réplica puede recibir cualquier span.
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector
+      annotations:
+        # Si cambia la configuración, el pipeline vuelve a aplicar y los pods se recrean.
+        config-hash: "${CONFIG_HASH}"
+    spec:
+      serviceAccountName: otel-collector
+      # No habla con la API de Kubernetes. Las credenciales de AWS las monta
+      # Pod Identity en su propio volumen, aparte del token de la cuenta de servicio.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+      containers:
+        - name: otel-collector
+          # Imagen oficial con los componentes de la comunidad (incluye awsxray).
+          # Desde ghcr.io y no Docker Hub, para no depender de su límite de descargas.
+          image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.160.0
+          args: ["--config=/conf/config.yaml"]
+          env:
+            - name: AWS_REGION
+              value: "${AWS_REGION}"
+            # Le dice al Go runtime cuánta memoria tiene, para que el recolector
+            # de basura actúe antes de llegar al límite.
+            - name: GOMEMLIMIT
+              value: "200MiB"
+          ports:
+            - name: otlp-http
+              containerPort: 4318
+            - name: health
+              containerPort: 13133
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: monitoring
+spec:
+  selector:
+    app.kubernetes.io/name: otel-collector
+  ports:
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: otel-collector
+  namespace: monitoring
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector

@@ -101,6 +101,9 @@ En resumen:
 - Hay SLOs de disponibilidad (99,9 %), latencia (99 % bajo 300 ms) y frescura de
   los datos (99 %). Las alarmas de CloudWatch avisan por consumo del presupuesto
   de error, no por umbrales sueltos, y cada ambiente tiene un tablero de SLOs.
+- Hay trazas distribuidas con OpenTelemetry y AWS X-Ray. Cada ciclo del recolector
+  es una traza con sus llamadas a GitHub, Kubernetes y DynamoDB, y los logs llevan
+  el mismo `trace_id`.
 
 El porqué de cada cosa está en [`docs/decisiones.md`](docs/decisiones.md).
 

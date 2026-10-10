@@ -7,3 +7,9 @@ autoscaling:
 
 nodeSelector:
   kubernetes.io/arch: arm64
+
+# En staging el tráfico es el de las pruebas: se guardan todas las trazas.
+tracing:
+  enabled: true
+  api:
+    sampleRatio: "1.0"

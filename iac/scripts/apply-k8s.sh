@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deja configurado el clúster de un ambiente con lo que pertenece a la plataforma
 # (no a la app): namespace, pool de nodos, permisos de lectura del recolector, el
-# enlace entre el Service y el ALB, y el monitoreo.
+# enlace entre el Service y el ALB, el monitoreo y el colector de trazas.
 #   uso: bash iac/scripts/apply-k8s.sh <staging|prod>
 #
 # Los manifiestos son los mismos para todos los ambientes; lo único que cambia
@@ -45,6 +45,15 @@ helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheu
 
 kubectl apply -f "$ROOT/k8s/monitoring/servicemonitor.yaml"
 kubectl apply -f "$ROOT/k8s/monitoring/dashboard.yaml"
+
+# ---------- Trazas: colector de OpenTelemetry que envía a X-Ray ----------
+# El hash de la configuración va como anotación del pod: si cambia, los pods se
+# recrean; si no, aplicar de nuevo no los toca.
+AWS_REGION="${AWS_REGION:-$(aws configure get region || echo us-east-2)}"
+CONFIG_HASH=$(sha256sum "$ROOT/k8s/tracing/otel-collector.yaml" | cut -c1-16)
+export AWS_REGION CONFIG_HASH
+envsubst '${AWS_REGION} ${CONFIG_HASH}' < "$ROOT/k8s/tracing/otel-collector.yaml" | kubectl apply -f -
+kubectl rollout status deployment/otel-collector --namespace monitoring --timeout 5m
 
 kubectl get nodepools
 kubectl get targetgroupbindings -A

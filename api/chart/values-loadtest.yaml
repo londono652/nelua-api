@@ -4,3 +4,8 @@
 autoscaling:
   minReplicas: 3
   maxReplicas: 30
+
+# Durante la prueba de carga se muestrea como en producción.
+tracing:
+  api:
+    sampleRatio: "0.001"

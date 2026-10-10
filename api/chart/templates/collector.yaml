@@ -65,6 +65,7 @@ spec:
               value: {{ .Values.collector.githubRefreshSeconds | quote }}
             - name: METRICS_NAMESPACE
               value: {{ .Values.collector.metricsNamespace | quote }}
+            {{- include "nelua-api.tracingEnv" (dict "root" . "service" "nelua-api-collector" "sampleRatio" .Values.tracing.collector.sampleRatio) | nindent 12 }}
             {{- if .Values.collector.githubTokenSecretId }}
             # Solo el nombre del secreto: el token se lee de Secrets Manager.
             - name: GITHUB_TOKEN_SECRET_ID

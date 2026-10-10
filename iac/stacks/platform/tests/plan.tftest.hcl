@@ -114,6 +114,14 @@ run "slo_alarms" {
     condition     = length(aws_cloudwatch_metric_alarm.slo["availability-fast-short"].alarm_actions) == 0
     error_message = "las ventanas sueltas no avisan; avisa la compuesta"
   }
+  assert {
+    condition     = aws_eks_pod_identity_association.otel_collector.namespace == "monitoring" && aws_eks_pod_identity_association.otel_collector.service_account == "otel-collector"
+    error_message = "el colector de trazas usa su propia identidad en monitoring"
+  }
+  assert {
+    condition     = aws_iam_role_policy_attachment.otel_collector_xray.policy_arn == "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+    error_message = "el colector de trazas solo escribe en X-Ray"
+  }
 }
 
 run "prod_jwt" {

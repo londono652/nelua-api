@@ -47,6 +47,20 @@ apiKeys:
   secretId: ""
 awsRegion: us-east-2
 
+# Trazas distribuidas (OpenTelemetry -> colector del clúster -> AWS X-Ray).
+# El colector lo instala la infraestructura (iac/k8s/tracing/otel-collector.yaml).
+# Apagado por defecto: en local no hay colector.
+tracing:
+  enabled: false
+  endpoint: http://otel-collector.monitoring.svc.cluster.local:4318
+  # Fracción de las trazas que se guardan. X-Ray cobra por traza, y a
+  # 10.000 RPS guardar todas costaría miles de dólares al mes.
+  api:
+    sampleRatio: "0.001"
+  # El recolector hace unos 6 ciclos por minuto: se guardan todos.
+  collector:
+    sampleRatio: "1.0"
+
 collector:
   enabled: true
   # "kubernetes"/"github" (reales) o "sample" (datos de ejemplo).

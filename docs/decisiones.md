@@ -250,7 +250,7 @@ Hay un diagrama por ambiente. Son el mismo diseño con distintos valores.
 | Escalabilidad a 10.000 RPS | La API no tiene estado y responde desde memoria. El HPA escala por CPU, rápido hacia arriba y lento hacia abajo. EKS Auto Mode agrega nodos cuando hay pods que no caben. La carga hacia GitHub, Kubernetes y DynamoDB no crece con el tráfico. |
 | Tolerancia a fallos | Probes de arranque, readiness y liveness. Apagado ordenado: el pod sigue atendiendo mientras el ALB lo retira. La foto en memoria aísla de fallos de las fuentes y de DynamoDB. DynamoDB replica en tres zonas y tiene respaldo continuo. Nodos Spot con On-Demand de respaldo. |
 | Manejo de secretos | Las API keys, las credenciales del cliente de Cognito del pipeline y el token de GitHub están en Secrets Manager. Su valor no pasa por el repositorio, el pipeline ni el estado de Terraform. No hay llaves de AWS guardadas: GitHub entra por OIDC y los pods por Pod Identity, con un rol distinto para la API y para el recolector. |
-| Monitoreo | SLOs de disponibilidad, latencia y frescura con alarmas de CloudWatch por consumo del presupuesto de error (`slo.tf`) y un tablero por SLO. Alarmas de diagnóstico (pods fuera de servicio, recolector sin sincronizar) que abren ticket sin despertar a nadie. Prometheus y Grafana en el clúster. Cada respuesta trae `meta.stale` y `meta.sync` con el motivo. |
+| Monitoreo | SLOs de disponibilidad, latencia y frescura con alarmas de CloudWatch por consumo del presupuesto de error (`slo.tf`) y un tablero por SLO. Alarmas de diagnóstico (pods fuera de servicio, recolector sin sincronizar) que abren ticket sin despertar a nadie. Prometheus y Grafana en el clúster. Trazas con OpenTelemetry hacia X-Ray, con el mismo `trace_id` en los logs. Cada respuesta trae `meta.stale` y `meta.sync` con el motivo. |
 
 ### El pico de 10.000 RPS
 
@@ -458,11 +458,58 @@ eventos malos por hora con las líneas de cada alarma. El presupuesto también s
 para decidir: si queda, se puede desplegar con más riesgo; si se acabó, se
 congelan los cambios que no sean de confiabilidad.
 
-El tracing no está implementado. Lo haría con OpenTelemetry, usando la
-auto-instrumentación de FastAPI y httpx, exportando a X-Ray con el colector de AWS
-y propagando el `X-Amzn-Trace-Id` que ya agrega el ALB. En esta API serviría más
-en el recolector, que es el que llama a GitHub, a Kubernetes y a DynamoDB, que en
-las peticiones, porque esas no salen de memoria. Los logs deberían llevar el mismo identificador.
+### Trazas distribuidas
+
+Las trazas son con OpenTelemetry y van a AWS X-Ray. Lo que más me importaba
+mostrar está en el recolector, que es el único que habla con sistemas externos:
+cada ciclo de sincronización es una traza (`sync github`, `sync cluster`,
+`sync budget`) con un span por vista (`collect deploys#owner/repo`) y, dentro, las
+llamadas a GitHub, a la API de Kubernetes, a DynamoDB y a CloudWatch. Cuando un
+repo falla, su span queda en error con la excepción, y el ciclo también. Si GitHub
+se pone lento o DynamoDB empieza a reintentar, se ve en qué llamada se fue el tiempo.
+
+En la API cada petición es un span con su ruta. La traza tiene un solo span porque
+la petición responde desde memoria; eso es justamente lo que buscaba el diseño. La
+relectura de DynamoDB cada 5 s también es una traza (`refresh snapshots`). Las
+rutas de operación (`/healthz`, `/readyz`, `/metrics`) no generan trazas.
+
+Cómo está armado:
+
+- **La app no sabe a dónde van las trazas.** Las manda por OTLP a un colector de
+  OpenTelemetry dentro del clúster (`iac/k8s/tracing/otel-collector.yaml`, dos
+  réplicas), y es él quien las envía a X-Ray con su propio rol de IAM, que solo
+  puede escribir trazas. Cambiar X-Ray por Tempo o Jaeger es cambiar ese archivo,
+  no el código.
+- **Instrumentación automática más spans propios.** FastAPI, httpx y boto3 se
+  instrumentan solos; los spans de sincronización los agregué a mano porque son
+  los que dan sentido a la traza.
+- **Configuración estándar.** La app lee las variables `OTEL_*` del SDK y las pone
+  el chart. Sin `OTEL_EXPORTER_OTLP_ENDPOINT` las trazas quedan apagadas y el
+  código de spans no cuesta nada, así que en local y en las pruebas todo funciona igual.
+- **Si el colector se cae, la app sigue.** El envío es en lote y en otro hilo; si
+  no hay a dónde mandar, las trazas se descartan y la petición no espera.
+- **Logs con el mismo identificador.** Cada línea de log lleva `trace_id=`, que es
+  el mismo de X-Ray (X-Ray lo muestra como `1-<8 primeros>-<resto>`). De un error en
+  los logs se llega a su traza y al revés. Las peticiones guardan además el
+  `X-Amzn-Trace-Id` que agrega el ALB, para cruzarlas con sus logs.
+
+**El muestreo lo decidí por costo.** X-Ray cobra por traza guardada (del orden de
+5 USD por millón). A 10.000 RPS, guardar todas serían cientos de millones al día.
+Por eso en producción la API guarda el 0,1 % (unas 10 trazas por segundo en el
+pico), mientras que el recolector guarda todas, porque son unos 6 ciclos por
+minuto. En staging se guarda todo porque el tráfico es el de las pruebas, salvo
+durante la prueba de carga, que muestrea como producción. La decisión se toma al
+inicio de cada traza y se respeta en toda ella, así que nunca quedan trazas a medias.
+
+Lo probé en local sin AWS: la API y el recolector mandaron sus trazas a un colector
+real con la misma configuración del clúster, apuntando a un X-Ray simulado, y
+revisé los documentos que habría recibido X-Ray: el ciclo con sus hijos, el error
+del repo que falla y el `trace_id` de los logs igual al de la traza. En AWS falta
+verlas en la consola la próxima vez que se levante staging.
+
+Lo siguiente sería muestreo por cola en el colector (guardar todas las trazas con
+error o lentas y una fracción del resto), que exige mandar todos los spans al
+colector y por eso más capacidad en él.
 
 ### El costo como variable de diseño
 
@@ -541,7 +588,7 @@ apruebe alguien distinto (`prevent_self_review`) y proteger la rama `main`.
 
 - Cognito también en staging, para que la autenticación sea idéntica en los dos
   ambientes. Hoy staging usa API key para que probar sea más simple.
-- Alertas por consumo del presupuesto de error y tracing con OpenTelemetry.
+- Muestreo por cola de las trazas (todas las que tienen error o son lentas).
 - Despliegue canary con Argo Rollouts. Hoy el rollback es rápido, pero una versión
   mala alcanza a recibir todo el tráfico antes de que se detecte.
 - Un rol de IAM de solo lectura para el `plan` de Terraform en pull requests, y un

@@ -58,6 +58,7 @@ spec:
               value: {{ .Values.auth.mode | quote }}
             - name: SNAPSHOT_REFRESH_SECONDS
               value: {{ .Values.snapshotRefreshSeconds | quote }}
+            {{- include "nelua-api.tracingEnv" (dict "root" . "service" "nelua-api" "sampleRatio" .Values.tracing.api.sampleRatio) | nindent 12 }}
             {{- if .Values.apiKeys.secretId }}
             # Solo el nombre del secreto: la API lo lee de Secrets Manager con
             # su propia identidad. La llave no pasa por el chart ni por el pipeline.
