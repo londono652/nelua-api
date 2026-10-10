@@ -10,6 +10,8 @@ consulta en cada petición. Un recolector las lee cada pocos segundos, guarda el
 historial y una foto ya calculada en DynamoDB, y los pods de la API responden
 desde memoria.
 
+**Si tienes 5 minutos, empieza por [`docs/resumen.md`](docs/resumen.md):** cada
+objetivo del reto con cómo lo resolví, los resultados medidos y los trade-offs.
 
 | Carpeta | Qué hay |
 |---|---|
@@ -18,7 +20,9 @@ desde memoria.
 | [`cicd/`](cicd) | Scripts de despliegue y rollback, pruebas de carga y la [explicación de los pipelines](cicd/README.md) |
 | [`.github/workflows/`](.github/workflows) | Los pipelines, en GitHub Actions |
 | [`run.md`](run.md) | Cómo correrlo en local y cómo desplegarlo |
+| [`docs/resumen.md`](docs/resumen.md) | El resumen: objetivos, resultados y trade-offs, con gráficos |
 | [`docs/decisiones.md`](docs/decisiones.md) | Por qué está hecho así, qué alternativas vi y qué sacrifiqué |
+| [`docs/`](docs) | Informes de la prueba de carga y de observabilidad (Word) |
 | [`prompts.md`](prompts.md) | Cómo usé IA en el reto |
 
 ## Probarlo

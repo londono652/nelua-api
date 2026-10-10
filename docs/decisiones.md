@@ -257,12 +257,12 @@ Hay un diagrama por ambiente. Son el mismo diseño con distintos valores.
 El enunciado habla de un pico, no de tráfico constante, y eso cambia cómo se
 escala y cuánto cuesta.
 
-Para tener un orden de magnitud hice una prueba local con k6 contra un solo
+Para tener un orden de magnitud hice primero una prueba local con k6 contra un solo
 proceso de la API, en una máquina de 2 vCPU compartidas con el propio k6. Aguantó
-unos 800 RPS con p95 de 18 ms y sin errores. En un pod con 1 vCPU dedicada debería
-rendir igual o mejor. Con ese número, 10.000 RPS son unos 13 pods al 100 % de CPU, o
-unos 22 al 60 % que usa el HPA, dentro del máximo de 30. La cifra real sale de la
-prueba de carga en staging.
+unos 800 RPS con p95 de 18 ms y sin errores, y con eso estimé unos 22 pods al 60 %
+de CPU. La prueba de carga en staging lo confirmó: 10.000 RPS sostenidos con 24 pods
+al 57 % de CPU (unos 417 RPS por pod), 0 errores y p95 de 5,2 ms. El detalle está en
+`docs/prueba-de-carga-nelua-api.docx`.
 
 Un pico es sobre todo un problema de velocidad. El HPA tarda cerca de un minuto en
 reaccionar y un nodo nuevo tarda otro minuto. En ese rato solo atienden los pods
@@ -348,7 +348,6 @@ Y hay cosas que dejaría distintas en producción y que no implementé:
 | Endpoint del clúster | Público, protegido por IAM | Restringido a rangos conocidos, o privado |
 | Permisos del pipeline de IaC | `AdministratorAccess`, limitado por la confianza OIDC y la aprobación manual | Un *permission boundary* y un rol de solo lectura para el plan |
 | Límite del WAF | Por IP | Por consumidor: *custom key* sobre `X-API-Key` en el WAF, o API Gateway con planes de uso si hace falta una cuota exacta por cliente de Cognito |
-| Alertas | Por umbral, en CloudWatch | Por consumo del presupuesto de error |
 | Cifrado | Llaves administradas por AWS | Llaves KMS propias donde haya requisito de cumplimiento |
 
 ### Alternativas que consideré
@@ -458,6 +457,21 @@ eventos malos por hora con las líneas de cada alarma. El presupuesto también s
 para decidir: si queda, se puede desplegar con más riesgo; si se acabó, se
 congelan los cambios que no sean de confiabilidad.
 
+Lo probé en staging provocando una falla: agregué un repo que no existe y lo dejé
+unos 30 minutos. Las alarmas compuestas de frescura (rápida y lenta) saltaron a
+los 1 o 2 minutos, porque el ambiente era nuevo y la ventana de una hora tenía
+poca historia; con un mes de datos habrían tardado más, que es lo que se busca.
+Al revertir, la compuesta volvió a OK unos 5 minutos después, mientras la ventana
+de una hora seguía en alarma: justamente lo que hace la ventana corta. El
+tablero mostró el presupuesto de frescura gastado de más. La evidencia y el paso
+a paso están en `docs/observabilidad-nelua-api.docx`.
+
+Un detalle de esa prueba: la alarma de ticket (ventana de 3 días) quedó en alarma
+en un ambiente con una hora de vida, porque en la frescura la falta de datos
+cuenta como falla. En un ambiente con historia no pasa; si molestara, el ticket
+podría tratar la falta de datos como "sin datos" y dejar ese caso a las alarmas
+de una hora.
+
 ### Trazas distribuidas
 
 Las trazas son con OpenTelemetry y van a AWS X-Ray. Lo que más me importaba
@@ -501,11 +515,28 @@ minuto. En staging se guarda todo porque el tráfico es el de las pruebas, salvo
 durante la prueba de carga, que muestrea como producción. La decisión se toma al
 inicio de cada traza y se respeta en toda ella, así que nunca quedan trazas a medias.
 
-Lo probé en local sin AWS: la API y el recolector mandaron sus trazas a un colector
-real con la misma configuración del clúster, apuntando a un X-Ray simulado, y
-revisé los documentos que habría recibido X-Ray: el ciclo con sus hijos, el error
-del repo que falla y el `trace_id` de los logs igual al de la traza. En AWS falta
-verlas en la consola la próxima vez que se levante staging.
+Primero lo probé en local, con un colector real y un X-Ray simulado, y después en
+staging. En la consola de X-Ray se ve el mapa de servicios, que resume el diseño
+mejor que el diagrama: `nelua-api` no tiene ninguna flecha de salida, y todas las
+dependencias (GitHub, la API de Kubernetes, DynamoDB, AWS Budgets y CloudWatch)
+cuelgan del recolector. En una sincronización de GitHub, de unos 570 ms, casi 400
+son la llamada a GitHub; DynamoDB responde en 4 a 6 ms.
+
+**Lo primero que encontraron las trazas fue un bug.** Al levantar staging apareció
+en X-Ray una llamada suelta a DynamoDB con error 400. Era el recolector al
+arrancar, leyendo el estado de la última sincronización: su rol de IAM no tenía
+`dynamodb:BatchGetItem`. El código atrapaba el error y seguía, así que estaba en
+los logs pero nadie lo veía, y la función de recordar el último éxito después de
+un reinicio nunca había funcionado en AWS (en las pruebas sí, porque usan un
+almacén en memoria). Agregué el permiso y le di a esa lectura su propio span
+(`restore sync status`) para que en X-Ray aparezca con nombre. Después del
+arreglo, las trazas de ese span salen sin error.
+
+Dos detalles que salieron de la prueba en AWS: en el tablero, el percentil de
+latencia heredaba la unidad de la métrica (segundos) y mostraba "1,7 min" en vez
+de 100 %; lo corregí en `slo.tf`. Y el filtro de X-Ray por atributo
+(`annotation.nelua_sync_ok`) no filtró como esperaba; para buscar fallas uso
+`fault = true OR error = true` o `service("sync github")`.
 
 Lo siguiente sería muestreo por cola en el colector (guardar todas las trazas con
 error o lentas y una fracción del resto), que exige mandar todos los spans al
