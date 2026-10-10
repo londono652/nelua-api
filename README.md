@@ -98,6 +98,9 @@ En resumen:
 - No hay secretos en el código ni en GitHub. Los pipelines entran a AWS por OIDC,
   los pods usan Pod Identity y las llaves y el token de GitHub están en Secrets
   Manager. La API y el recolector tienen roles distintos: la API solo lee.
+- Hay SLOs de disponibilidad (99,9 %), latencia (99 % bajo 300 ms) y frescura de
+  los datos (99 %). Las alarmas de CloudWatch avisan por consumo del presupuesto
+  de error, no por umbrales sueltos, y cada ambiente tiene un tablero de SLOs.
 
 El porqué de cada cosa está en [`docs/decisiones.md`](docs/decisiones.md).
 

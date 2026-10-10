@@ -250,7 +250,7 @@ Hay un diagrama por ambiente. Son el mismo diseño con distintos valores.
 | Escalabilidad a 10.000 RPS | La API no tiene estado y responde desde memoria. El HPA escala por CPU, rápido hacia arriba y lento hacia abajo. EKS Auto Mode agrega nodos cuando hay pods que no caben. La carga hacia GitHub, Kubernetes y DynamoDB no crece con el tráfico. |
 | Tolerancia a fallos | Probes de arranque, readiness y liveness. Apagado ordenado: el pod sigue atendiendo mientras el ALB lo retira. La foto en memoria aísla de fallos de las fuentes y de DynamoDB. DynamoDB replica en tres zonas y tiene respaldo continuo. Nodos Spot con On-Demand de respaldo. |
 | Manejo de secretos | Las API keys, las credenciales del cliente de Cognito del pipeline y el token de GitHub están en Secrets Manager. Su valor no pasa por el repositorio, el pipeline ni el estado de Terraform. No hay llaves de AWS guardadas: GitHub entra por OIDC y los pods por Pod Identity, con un rol distinto para la API y para el recolector. |
-| Monitoreo básico | Alarmas de CloudWatch sobre el ALB (5xx, latencia p95 y pods fuera de servicio) con aviso por SNS. Prometheus y Grafana en el clúster. Alarmas de frescura: avisan si el recolector lleva 5 minutos sin sincronizar con GitHub o 2 con el clúster. Cada respuesta trae `meta.stale` y `meta.sync` con el motivo. |
+| Monitoreo | SLOs de disponibilidad, latencia y frescura con alarmas de CloudWatch por consumo del presupuesto de error (`slo.tf`) y un tablero por SLO. Alarmas de diagnóstico (pods fuera de servicio, recolector sin sincronizar) que abren ticket sin despertar a nadie. Prometheus y Grafana en el clúster. Cada respuesta trae `meta.stale` y `meta.sync` con el motivo. |
 
 ### El pico de 10.000 RPS
 
@@ -410,31 +410,53 @@ Hoy los dos ambientes están en la misma.
 
 ### SLOs, SLIs y alertas
 
-| SLI | Cómo se mide | SLO (30 días) |
-|---|---|---|
-| Disponibilidad | Peticiones sin 5xx sobre el total, medido en el ALB | 99,9 % (43 minutos de presupuesto de error) |
-| Latencia | p95 del tiempo de respuesta en el ALB | 95 % de las peticiones por debajo de 300 ms |
-| Frescura | Antigüedad de la foto que sirve la API (`snapshot_age_seconds`, por vista) | Menos de 60 s el 99 % del tiempo para el clúster y menos de 3 minutos para los despliegues |
+| SLI | Cómo se mide | SLO (30 días) | Presupuesto de error |
+|---|---|---|---|
+| Disponibilidad | Peticiones sin 5xx (del ALB o de los pods) sobre el total, medido en el ALB | 99,9 % | 0,1 %: unos 43 minutos de caída total al mes |
+| Latencia | Peticiones que responden en menos de 300 ms sobre el total, en el ALB | 99 % | 1 % de peticiones lentas |
+| Frescura | Sincronizaciones buenas del recolector sobre el total (`SyncSuccess`), la peor entre GitHub y el clúster | 99 % | 1 % de sincronizaciones fallidas |
 
 Mido en el ALB porque ahí se ve lo que le pasa al cliente, incluso cuando no hay
 ningún pod respondiendo. La frescura la agregué por cómo está hecha la API: si
 responde 200 con datos de hace una hora, para quien la consulta está caída.
 
-Las alertas las plantearía por consumo del presupuesto de error y no por umbrales:
+La latencia la definí como porcentaje de peticiones por debajo de un umbral y no
+como un p95, porque así tiene presupuesto de error igual que las otras dos. En la
+prueba de carga el p99 fue de unos 10 ms, así que 300 ms deja margen para las
+dependencias que hoy no hay en el camino de la petición.
 
-| Situación | Ventana | Acción |
-|---|---|---|
-| Consumo muy rápido (el presupuesto se acabaría en unos 2 días) | 1 h, confirmada en 5 min | Despierta a alguien |
-| Consumo sostenido (se acabaría en unos 5 días) | 6 h, confirmada en 30 min | Despierta a alguien |
-| Consumo lento | 3 días | Ticket para el siguiente día hábil |
+Las alertas son por consumo del presupuesto de error (burn rate) y no por
+umbrales. Un burn rate de 1 gasta el presupuesto justo en los 30 días; uno de 14,4
+lo gasta en dos días.
+
+| Nivel | Condición | Ejemplo en disponibilidad | Acción |
+|---|---|---|---|
+| Rápido | 14,4x en 1 h y también en los últimos 5 min | Más de 1,44 % de 5xx | Despierta a alguien |
+| Lento | 6x en 6 h y también en los últimos 30 min | Más de 0,6 % de 5xx | Despierta a alguien |
+| Ticket | 1x tres días seguidos | Más de 0,1 % de 5xx | Ticket para el siguiente día hábil |
+
+La ventana larga confirma que el problema es real y no un pico; la corta, que sigue
+pasando. Sin la corta, la alarma seguiría sonando casi una hora después de
+arreglar el problema. En CloudWatch cada ventana es una alarma con metric math y
+cada nivel es una alarma compuesta (`ALARM(larga) AND ALARM(corta)`) que publica
+en el topic de alertas. El ticket va a otro topic.
+
+Con esto se evitan los dos problemas de las alarmas por umbral: un pod que se
+reinicia y da 30 segundos de errores no despierta a nadie porque el presupuesto lo
+absorbe, y un 0,3 % de errores constante, que ninguna alarma de umbral nota, abre
+un ticket antes de que se coma el mes.
 
 Con una sola persona de guardia, la regla es que solo la despierte algo que afecta
-al usuario y que hay que atender ya. Un pod que se reinicia o un nodo que se
-reemplaza no cumplen eso si el servicio sigue respondiendo. Esos casos quedan en
-`/v1/deployments` y en Grafana.
+al usuario y que hay que atender ya. Por eso las alarmas de causa (pods fuera de
+servicio en el ALB, recolector sin sincronizar con GitHub o con el clúster)
+siguen existiendo pero abren ticket: dicen dónde mirar, no que haya que levantarse.
 
-Hoy lo que está implementado son alarmas de CloudWatch por umbral sobre esos
-mismos indicadores, incluida la frescura (`SyncSuccess`). Las alertas por consumo serían el paso siguiente.
+Los objetivos están en la variable `slo` del stack y las alarmas se calculan a
+partir de ellos. El tablero `nelua-api-<ambiente>-slo` muestra por SLI el
+cumplimiento de los últimos 30 días, cuánto presupuesto queda y la serie de
+eventos malos por hora con las líneas de cada alarma. El presupuesto también sirve
+para decidir: si queda, se puede desplegar con más riesgo; si se acabó, se
+congelan los cambios que no sean de confiabilidad.
 
 El tracing no está implementado. Lo haría con OpenTelemetry, usando la
 auto-instrumentación de FastAPI y httpx, exportando a X-Ray con el colector de AWS

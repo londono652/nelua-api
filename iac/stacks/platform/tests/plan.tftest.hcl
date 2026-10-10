@@ -84,6 +84,38 @@ run "staging_api_key" {
   }
 }
 
+run "slo_alarms" {
+  command = plan
+  variables {
+    environment                  = "staging"
+    vpc_cidr                     = "10.0.0.0/16"
+    nat_per_az                   = false
+    alb_deletion_protection      = false
+    dynamodb_deletion_protection = false
+    auth_mode                    = "api_key"
+  }
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.slo) == 15 && length(aws_cloudwatch_composite_alarm.slo_page) == 6
+    error_message = "3 SLIs x (2 niveles x 2 ventanas + ticket) y 6 compuestas"
+  }
+  assert {
+    condition     = abs(aws_cloudwatch_metric_alarm.slo["availability-fast-long"].threshold - 1.44) < 0.0001 && alltrue([for q in aws_cloudwatch_metric_alarm.slo["availability-fast-long"].metric_query : q.expression != null || q.metric[0].period == 3600])
+    error_message = "disponibilidad rápida: 14,4 x 0,1 % en 1 h"
+  }
+  assert {
+    condition     = abs(aws_cloudwatch_metric_alarm.slo["latency-slow-short"].threshold - 6) < 0.0001
+    error_message = "latencia lenta: 6 x 1 %"
+  }
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.slo["freshness-ticket"].evaluation_periods == 3 && aws_cloudwatch_metric_alarm.slo["freshness-ticket"].treat_missing_data == "breaching"
+    error_message = "frescura: ticket a 3 días y la falta de datos cuenta como falla"
+  }
+  assert {
+    condition     = length(aws_cloudwatch_metric_alarm.slo["availability-fast-short"].alarm_actions) == 0
+    error_message = "las ventanas sueltas no avisan; avisa la compuesta"
+  }
+}
+
 run "prod_jwt" {
   command = plan
   variables {

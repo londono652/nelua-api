@@ -114,3 +114,24 @@ variable "api_consumers" {
   type        = list(string)
   default     = ["tablero-plataforma"]
 }
+
+variable "slo" {
+  description = "Objetivos de nivel de servicio a 30 días, en porcentaje. Las alarmas por consumo del presupuesto de error se calculan a partir de ellos"
+  type = object({
+    availability              = number # % de peticiones sin 5xx
+    latency_target            = number # % de peticiones por debajo del umbral
+    latency_threshold_seconds = number
+    freshness                 = number # % de sincronizaciones buenas del recolector
+  })
+  default = {
+    availability              = 99.9
+    latency_target            = 99
+    latency_threshold_seconds = 0.3
+    freshness                 = 99
+  }
+
+  validation {
+    condition     = alltrue([for v in [var.slo.availability, var.slo.latency_target, var.slo.freshness] : v > 90 && v < 100])
+    error_message = "Los SLO van entre 90 y 100 (sin incluir 100: un SLO de 100 % no deja presupuesto de error)."
+  }
+}

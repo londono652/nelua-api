@@ -57,3 +57,8 @@ output "oauth" {
     client_ids = { for name, client in aws_cognito_user_pool_client.consumer : name => client.id }
   } : null
 }
+
+output "slo_dashboard_url" {
+  description = "Tablero de SLOs en CloudWatch"
+  value       = "https://${var.region}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards/dashboard/${aws_cloudwatch_dashboard.slo.dashboard_name}"
+}
