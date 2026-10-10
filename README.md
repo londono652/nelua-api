@@ -20,11 +20,14 @@ objetivo del reto con cómo lo resolví, los resultados medidos y los trade-offs
 | [`cicd/`](cicd) | Scripts de despliegue y rollback, pruebas de carga y la [explicación de los pipelines](cicd/README.md) |
 | [`.github/workflows/`](.github/workflows) | Los pipelines, en GitHub Actions |
 | [`run.md`](run.md) | Cómo correrlo en local y cómo desplegarlo |
+| [`postman/`](postman) | Colección de Postman para probar staging |
 | [`docs/decisiones.md`](docs/decisiones.md) | Cada objetivo y cómo lo resolví, resultados medidos, alternativas y trade-offs |
 | [`docs/`](docs) | Informes de la prueba de carga y de observabilidad (Word) |
 | [`prompts.md`](prompts.md) | Cómo usé IA en el reto |
 
 ## Probarlo
+
+### En local
 
 ```bash
 cd api
@@ -41,6 +44,38 @@ clúster ni cuenta de AWS, así que el estado de Kubernetes, los despliegues y e
 presupuesto son datos de ejemplo.
 Los despliegues pueden ser los reales de GitHub cambiando una variable en `.env`.
 El detalle está en [`run.md`](run.md).
+
+### Contra staging, desplegado en AWS
+
+La API está en `https://api-staging.nelua.site`. Los endpoints bajo `/v1` piden la
+API key en el encabezado `X-API-Key`; la llave se entrega por correo y no está en
+el repositorio.
+
+```bash
+U=https://api-staging.nelua.site
+KEY='<la llave del correo>'
+
+curl -s $U/healthz                                                        # versión desplegada, sin llave
+curl -s -H "X-API-Key: $KEY" $U/v1/repos                                  # repos monitoreados
+curl -s -H "X-API-Key: $KEY" "$U/v1/repos/londono652/nelua-api/deploys?environment=staging&limit=5"
+curl -s -H "X-API-Key: $KEY" "$U/v1/repos/londono652/nelua-api/deploys/stats?days=7"
+curl -s -H "X-API-Key: $KEY" $U/v1/deployments                            # estado en Kubernetes
+curl -s -H "X-API-Key: $KEY" $U/v1/budget                                 # gasto del mes en AWS
+```
+
+Y tres errores esperados, todos con el formato RFC 9457:
+
+```bash
+curl -s $U/v1/repos                                                       # 401: sin llave
+curl -s -H "X-API-Key: $KEY" $U/v1/repos/otro/repo/deploys                # 404: repo no monitoreado
+curl -s -H "X-API-Key: $KEY" "$U/v1/repos/londono652/nelua-api/deploys/stats?days=15"  # 422
+```
+
+Con `| jq` se leen mejor. La documentación interactiva está en `$U/docs`.
+
+**Postman:** importa [`postman/nelua-api-staging.postman_collection.json`](postman/nelua-api-staging.postman_collection.json),
+pega la llave en la variable `apiKey` de la colección y usa *Run collection*: son
+12 peticiones con 29 pruebas, incluidos los tres errores.
 
 ## La API
 
