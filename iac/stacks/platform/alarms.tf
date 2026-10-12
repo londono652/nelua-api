@@ -89,3 +89,25 @@ resource "aws_cloudwatch_metric_alarm" "sync" {
   alarm_actions       = local.ticket_actions
   ok_actions          = local.ticket_actions
 }
+
+# Recolector caído: deja de publicar SyncSuccess. Las alarmas de SLO promedian
+# las sincronizaciones que llegaron, así que una ausencia total tarda en notarse;
+# esta cuenta cuántas llegaron. El recolector sincroniza el clúster cada 15 s
+# (unas 20 por ventana de 5 min): si en 15 minutos seguidos no llegó ninguna, el
+# recolector no está corriendo, y esta sí despierta a alguien.
+resource "aws_cloudwatch_metric_alarm" "collector_down" {
+  alarm_name          = "${local.name}-collector-down"
+  alarm_description   = "El recolector no publica sincronizaciones hace 15 minutos: no está corriendo y los datos de la API se están quedando viejos"
+  namespace           = var.project
+  metric_name         = "SyncSuccess"
+  dimensions          = { Environment = var.environment, Source = "cluster" }
+  statistic           = "SampleCount"
+  period              = 300
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}

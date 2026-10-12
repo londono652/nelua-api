@@ -171,6 +171,23 @@ hace una hora, para quien la consulta está caída.
 Así un pico de 30 segundos no despierta a nadie, y un 0,3 % de errores constante,
 que ninguna alarma de umbral ve, abre un ticket antes de que se coma el mes.
 
+En la práctica, cuándo me entero:
+
+| Situación | Aviso |
+|---|---|
+| La API devuelve 5xx al 100 % | Despierta en ~2–5 min |
+| Un pod se reinicia y da 30 s de errores | Nada: lo absorbe el presupuesto |
+| 1 % de errores constante | Despierta en ~3,5 h |
+| 0,3 % de errores constante | Ticket a los 3 días |
+| Todas las peticiones tardan más de 300 ms | Despierta en ~10 min |
+| GitHub falla (token vencido, repo inaccesible) | Ticket a los 5 min; despierta en ~10 min |
+| El recolector se cae | Ticket a los 2 min; despierta a los 15 min (`collector-down`) |
+
+La última fila tiene su propia alarma porque un recolector caído deja de publicar
+métricas, y las de SLO promedian lo que sí llegó: una ausencia total tardaría
+cerca de una hora en notarse. `collector-down` cuenta cuántas sincronizaciones
+llegaron y despierta si en 15 minutos no hubo ninguna.
+
 **Probado en staging:** provoqué una falla de sincronización. La alarma saltó en
 1–2 minutos y volvió a OK unos 5 minutos después de corregirla, aunque la ventana
 de una hora seguía en rojo: para eso está la ventana corta.

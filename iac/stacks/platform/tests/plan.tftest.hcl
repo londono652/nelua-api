@@ -115,6 +115,10 @@ run "slo_alarms" {
     error_message = "las ventanas sueltas no avisan; avisa la compuesta"
   }
   assert {
+    condition     = aws_cloudwatch_metric_alarm.collector_down.statistic == "SampleCount" && aws_cloudwatch_metric_alarm.collector_down.evaluation_periods * aws_cloudwatch_metric_alarm.collector_down.period == 900 && aws_cloudwatch_metric_alarm.collector_down.treat_missing_data == "breaching"
+    error_message = "recolector caído: despierta a los 15 minutos sin sincronizaciones"
+  }
+  assert {
     condition     = aws_eks_pod_identity_association.otel_collector.namespace == "monitoring" && aws_eks_pod_identity_association.otel_collector.service_account == "otel-collector"
     error_message = "el colector de trazas usa su propia identidad en monitoring"
   }
