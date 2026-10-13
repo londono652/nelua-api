@@ -20,7 +20,7 @@ objetivo del reto con cómo lo resolví, los resultados medidos y los trade-offs
 | [`cicd/`](cicd) | Scripts de despliegue y rollback, pruebas de carga y la [explicación de los pipelines](cicd/README.md) |
 | [`.github/workflows/`](.github/workflows) | Los pipelines, en GitHub Actions |
 | [`run.md`](run.md) | Cómo correrlo en local y cómo desplegarlo |
-| [`postman/`](postman) | Colección de Postman para probar staging |
+| [`postman/`](postman) | Colecciones de Postman para probar en local y contra staging |
 | [`docs/decisiones.md`](docs/decisiones.md) | Cada objetivo y cómo lo resolví, resultados medidos, alternativas y trade-offs |
 | [`docs/`](docs) | Informes de la prueba de carga y de observabilidad (Word) |
 | [`prompts.md`](prompts.md) | Cómo usé IA en el reto |
@@ -44,6 +44,10 @@ clúster ni cuenta de AWS, así que el estado de Kubernetes, los despliegues y e
 presupuesto son datos de ejemplo.
 Los despliegues pueden ser los reales de GitHub cambiando una variable en `.env`.
 El detalle está en [`run.md`](run.md).
+
+**Postman:** importa [`postman/nelua-api-local.postman_collection.json`](postman/nelua-api-local.postman_collection.json)
+y usa *Run collection*. Ya trae la llave de `.env.example`; si cambiaste `API_KEYS`, ponla en
+la variable `apiKey`.
 
 ### Contra staging, desplegado en AWS
 
